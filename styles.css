@@ -1,8 +1,9 @@
 /* ==========================================================================
-   LUX VISION · styles.css (v2 — refactor)
+   LUX VISION · styles.css (v2.2 — tipografía unificada + ficha dinámica)
    --------------------------------------------------------------------------
    Índice:
-     1 · CONFIGURACIÓN DE COLORES Y TIPOGRAFÍA   ← EDITAR ACÁ (líneas 16-60)
+     0 · FUENTE TIPOGRÁFICA ÚNICA — DÓNDE SE APLICA CADA COMPONENTE
+     1 · CONFIGURACIÓN DE COLORES Y TIPOGRAFÍA   ← EDITAR ACÁ
      2 · Base (tipografía global, selección, scrollbars)
      3 · Encabezado (degradado + fila de KPIs)
      4 · Controles (buscador, coordenadas, selectores, dropdowns)
@@ -16,6 +17,51 @@
 
 
 /* ══════════════════════════════════════════════════════════════════════
+   0 · FUENTE TIPOGRÁFICA ÚNICA — DÓNDE SE APLICA CADA COMPONENTE
+   ──────────────────────────────────────────────────────────────────────
+   La tipografía de TODA la aplicación es "Archivo" (declarada en el
+   bloque 1 como --font-ui y aplicada globalmente en el bloque 2).
+
+   A continuación el MAPA DE APLICACIÓN por componente de la UI:
+
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ 1) ENCABEZADO PRINCIPAL (Header)                                 │
+   │    · body / #main-header  → font-family: var(--font-ui)          │
+   │    · .kpi-module          → hereda del body                      │
+   │    · .kpi-number/.kpi-label → pesos y tracking por variable      │
+   │    · #fecha-ultima-actualizacion → hereda del header             │
+   ├──────────────────────────────────────────────────────────────────┤
+   │ 2) PANEL LATERAL (Sidebar / Ficha técnica)                       │
+   │    · #technical-sidebar   → hereda body (--font-ui)              │
+   │    · .ficha-label/.ficha-valor → jerarquía tipográfica con       │
+   │      --font-weight-label / --font-weight-valor                   │
+   │    · #technical-sidebar h3 → hereda body                         │
+   ├──────────────────────────────────────────────────────────────────┤
+   │ 3) MENÚS DESPLEGABLES (Dropdowns / Selects)                      │
+   │    · .dropdown-content    → hereda body (--font-ui)              │
+   │    · .dropdown-title      → herencia + tracking --tracking-label │
+   │    · select / #map-style-select / #filtro-distrito               │
+   │      → FUERZA font-family: var(--font-ui) !important (base §2)   │
+   │    · .osm-search-input    → FUERZA font-family: var(--font-ui)   │
+   ├──────────────────────────────────────────────────────────────────┤
+   │ 4) TARJETAS DE ESTADÍSTICAS Y WIDGETS                            │
+   │    · #stats-panel         → hereda body                          │
+   │    · #stats-panel h3      → pesos y tracking reforzados          │
+   │    · .sv-card-header      → tipografía propia + herencia         │
+   ├──────────────────────────────────────────────────────────────────┤
+   │ 5) CONTENEDOR "FECHA DE ACTUALIZACIÓN"                           │
+   │    · #fecha-ultima-actualizacion → hereda del header (.text-xs)  │
+   │    · .text-slate-500 (Tailwind) aplicado al contenedor padre     │
+   └──────────────────────────────────────────────────────────────────┘
+
+   REGLA GENERAL: la fuente se define UNA VEZ en --font-ui (bloque 1) y
+   se aplica al body + controles nativos (button, input, select, textarea)
+   en el bloque 2. Ningún componente define su propia familia tipográfica:
+   todos heredan para garantizar consistencia visual.
+   ══════════════════════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════════════════════
    1 · CONFIGURACIÓN DE COLORES Y TIPOGRAFÍA
    ──────────────────────────────────────────────────────────────────────
    >>> PARA CAMBIAR LA PALETA O LAS FUENTES DEL VISOR, EDITA SOLO ESTE
@@ -24,12 +70,13 @@
 
 :root {
 
-    /* ── 1.A · TIPOGRAFÍA ─────────────────────────────────────────────
-       Fuente única del visor. Para cambiarla, reemplaza este valor
-       (y el <link> de Google Fonts en index.html). */
+    /* ── 1.A · TIPOGRAFÍA ÚNICA DE LA APLICACIÓN ─────────────────────
+       Fuente única del visor. Coincide con la del <select> del header y
+       con el <link> de Google Fonts en index.html.
+       Para cambiarla: reemplazar este valor + el <link> en index.html. */
     --font-ui: "Archivo", "Inter", sans-serif;
 
-    /* Pesos usados en la jerarquía de la ficha */
+    /* Pesos usados en la jerarquía de la ficha y KPIs */
     --font-weight-label: 800;    /* etiquetas en mayúsculas (negrita fuerte) */
     --font-weight-valor: 500;    /* valores de atributos */
     --font-weight-num:   700;    /* cifras KPI */
@@ -38,38 +85,41 @@
     --tracking-label: 0.09em;    /* KPI labels, títulos de dropdown */
     --tracking-num: -0.015em;    /* cifras: ligeramente cerrado */
 
-    /* ── 1.B · PALETA DEL PANEL LATERAL (ficha técnica) ───────────────
-       Jerarquía visual limpia sobre fondo BLANCO (tema claro y oscuro):
-       etiquetas muy oscuras en negrita, valores grises medianos,
-       líneas internas sutiles. */
-    --ux-sidebar-bg:            #ffffff;   /* fondo del panel lateral */
-    --ux-sidebar-border:        #e2e8f0;   /* borde externo del panel */
-    --ux-celda-border:          #e2e8f0;   /* líneas internas de la grilla */
-    --ux-label-color:           #0f172a;   /* color de las ETIQUETAS (oscuro) */
-    --ux-valor-color:           #334155;   /* color de los VALORES */
-    --ux-accent:                #1f618d;   /* acento institucional (botones) */
-    --ux-btn-primary-bg:        #1b2a47;   /* botón "Exportar PDF" (reposo) */
-    --ux-btn-primary-bg-hover:  #1f618d;   /* botón "Exportar PDF" (hover) */
+    /* ── 1.B · PALETA DEL PANEL LATERAL (ficha técnica) ─────────────── */
+    --ux-sidebar-bg:            #ffffff;
+    --ux-sidebar-border:        #e2e8f0;
+    --ux-celda-border:          #e2e8f0;
+    --ux-label-color:           #0f172a;
+    --ux-valor-color:           #334155;
+    --ux-accent:                #1f618d;
+    --ux-btn-primary-bg:        #1b2a47;
+    --ux-btn-primary-bg-hover:  #1f618d;
 
-    /* ── 1.C · PALETA OSCURA (variante .dark) ─────────────────────────
-       Mismos componentes del panel lateral en tema oscuro. */
+    /* ── 1.C · PALETA OSCURA (variante .dark) ───────────────────────── */
     --ux-sidebar-bg-dark:       #0b1528;
     --ux-sidebar-border-dark:   rgba(148, 163, 184, 0.15);
     --ux-celda-border-dark:     #1e293b;
     --ux-label-color-dark:      #cbd5e1;
     --ux-valor-color-dark:      #f1f5f9;
 
-    /* ── 1.D · Acento institucional global (encabezado, selección, foco) */
+    /* ── 1.D · Acento institucional global ─────────────────────────── */
     --accent: #5a9cf2;
 }
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   2 · BASE
+   2 · BASE — APLICACIÓN GLOBAL DE LA TIPOGRAFÍA
+   ──────────────────────────────────────────────────────────────────────
+   PUNTO ÚNICO de aplicación de --font-ui. Se incluyen los controles
+   nativos (button, input, select, textarea) porque NO heredan
+   automáticamente la fuente del body en la mayoría de navegadores.
+   Esto es lo que garantiza que el <select> del header, los inputs,
+   los botones KPI y los dropdowns usen EXACTAMENTE la misma familia
+   que el resto de la interfaz.
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Tipografía global. Las cifras usan formato tabular para que los KPI
-   no "bailen" al actualizarse. */
+/* [REGLA GLOBAL] Aplica la tipografía a TODOS los componentes: header,
+   sidebar, dropdowns, estadísticas, widgets y controles nativos. */
 body, button, input, select, textarea {
     font-family: var(--font-ui) !important;
     font-variant-numeric: tabular-nums;
@@ -99,7 +149,12 @@ body, button, input, select, textarea {
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   3 · ENCABEZADO
+   3 · ENCABEZADO — [TIPOGRAFÍA: heredada del body]
+   ──────────────────────────────────────────────────────────────────────
+   El header NO define su propia font-family: hereda --font-ui.
+   Los módulos KPI (.kpi-module) y sus cifras (.kpi-number) y etiquetas
+   (.kpi-label) también heredan, con pesos/tracking desde el bloque 1.
+   El contenedor "Fecha actualización" hereda igual (ver §3.D).
    ══════════════════════════════════════════════════════════════════════ */
 
 #main-header {
@@ -127,7 +182,7 @@ body, button, input, select, textarea {
             rgba(11, 18, 32, 0.82) 100%) !important;
 }
 
-/* ── Módulos KPI ── */
+/* ── 3.A · Módulos KPI ── */
 
 .kpi-module-wrap {
     position: relative;
@@ -135,8 +190,7 @@ body, button, input, select, textarea {
     align-items: stretch;
 }
 
-/* Separador SÓLIDO y fino entre módulos KPI (reemplaza al punteado).
-   Grosor, opacidad y extensión vertical ajustables desde acá. */
+/* Separador SÓLIDO y fino entre módulos KPI. */
 .kpi-module-wrap::before {
     content: '';
     position: absolute;
@@ -154,7 +208,7 @@ body, button, input, select, textarea {
 }
 .kpi-module-wrap:first-of-type::before { display: none; }
 
-/* El botón KPI en sí: sin caja, solo tipografía */
+/* El botón KPI en sí: sin caja, solo tipografía (hereda --font-ui). */
 .kpi-module {
     background: transparent !important;
     border: none !important;
@@ -173,10 +227,9 @@ body, button, input, select, textarea {
 }
 .kpi-module:hover { background: rgba(255, 255, 255, 0.025) !important; }
 
-/* "TODAS" es solo una etiqueta: la centramos verticalmente */
 #btn-mod-todos .kpi-label { padding-top: 8px; }
 
-/* Cifra grande */
+/* Cifra grande (hereda --font-ui, ajusta peso y tracking por variable). */
 .kpi-number {
     font-size: 13.5px !important;
     font-weight: var(--font-weight-num) !important;
@@ -186,7 +239,7 @@ body, button, input, select, textarea {
     transition: color 0.15s ease;
 }
 
-/* Etiqueta pequeña en mayúsculas con aire entre letras */
+/* Etiqueta pequeña en mayúsculas (hereda --font-ui). */
 .kpi-label {
     font-size: 8px !important;
     font-weight: 600 !important;
@@ -202,11 +255,10 @@ body, button, input, select, textarea {
 #main-header .kpi-module.layer-button-on  .kpi-number { color: #ffffff !important; }
 #main-header .kpi-module.layer-button-on  .kpi-label  { color: rgba(255, 255, 255, 0.55) !important; }
 
-/* Hover: ilumina número y etiqueta del módulo completo */
 .kpi-module-wrap:hover .kpi-number { color: #ffffff !important; }
 .kpi-module-wrap:hover .kpi-label  { color: rgba(255, 255, 255, 0.6) !important; }
 
-/* El dropdown se abre con CSS puro: hover sobre el wrapper */
+/* El dropdown se abre con CSS puro: hover sobre el wrapper. */
 .kpi-module-wrap:hover > .dropdown-content { display: block !important; }
 
 /* Botón de filtro por tecnología activo */
@@ -222,13 +274,34 @@ body, button, input, select, textarea {
     color: #22d3ee !important;
 }
 
+/* ── 3.D · Contenedor "Fecha de actualización" ─────────────────────────
+   [TIPOGRAFÍA: heredada del body / header → --font-ui]
+   El <span id="fecha-ultima-actualizacion"> NO redefine familia; hereda
+   la fuente global. Se fuerza aquí explícitamente para asegurar que
+   tampoco se sobreescriba por algún reset de terceros. */
+#fecha-ultima-actualizacion {
+    font-family: var(--font-ui) !important;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
 
 /* ══════════════════════════════════════════════════════════════════════
-   4 · CONTROLES (fila superior del header)
+   4 · CONTROLES (fila superior del header y buscador)
+   ──────────────────────────────────────────────────────────────────────
+   [TIPOGRAFÍA: forzada a --font-ui en cada control]
+   Los controles nativos (input, select, button) NO heredan la fuente del
+   body en todos los navegadores, por eso aquí se vuelve a reforzar
+   explícitamente. Cubre:
+     · Buscador Nominatim (.osm-search-input)   → sidebar
+     · Select del mapa base (#map-style-select) → header
+     · Select de distritos (#filtro-distrito)   → header
+     · Botón sol/luna (#theme-toggle)
    ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Buscador Nominatim ── */
 .osm-search-input {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: buscador sidebar] */
     width: 240px;
     height: 28px;
     padding: 0 10px 0 30px;
@@ -248,6 +321,7 @@ body, button, input, select, textarea {
 
 /* Resultados del buscador */
 .osm-result-item {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: dropdown búsqueda] */
     display: block;
     width: 100%;
     text-align: left;
@@ -265,7 +339,9 @@ body, button, input, select, textarea {
 .osm-result-item:hover { background: rgba(90, 156, 242, 0.14); color: #fff; }
 .osm-result-item:last-child { border-bottom: none; }
 
+/* [TIPOGRAFÍA: select del header — se fuerza la fuente global] */
 #map-style-select {
+    font-family: var(--font-ui) !important;
     background: transparent !important;
     border: none !important;
     color: #e2e8f0 !important;
@@ -284,7 +360,9 @@ body, button, input, select, textarea {
     color: #fff !important;
 }
 
+/* [TIPOGRAFÍA: select de distritos — se fuerza la fuente global] */
 #filtro-distrito {
+    font-family: var(--font-ui) !important;
     background: rgba(255, 255, 255, 0.04) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     color: #cbd5e1 !important;
@@ -300,8 +378,9 @@ body, button, input, select, textarea {
     color: #fff !important;
 }
 
-/* Títulos y filas de los dropdowns de KPI */
+/* Títulos y filas de los dropdowns de KPI (heredan --font-ui). */
 .dropdown-title {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: dropdown KPI] */
     font-size: 9px;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.45);
@@ -312,6 +391,7 @@ body, button, input, select, textarea {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 .dropdown-row {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: filas dropdown] */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -325,15 +405,17 @@ body, button, input, select, textarea {
 /* ══════════════════════════════════════════════════════════════════════
    5 · FICHA TÉCNICA (panel lateral)
    ──────────────────────────────────────────────────────────────────────
-   Diseño sobre fondo BLANCO con jerarquía limpia (ver imagen de ref.):
-   tarjeta Street View → grilla de atributos con etiquetas oscuras en
-   negrita → acordeón "Ver más campos" → botón Exportar PDF.
-   Los colores salen del bloque 1 (--ux-*): EDITAR LA PALETA ALLÍ.
+   [TIPOGRAFÍA: heredada del body → --font-ui]
+   El panel #technical-sidebar NO redefine familia: hereda --font-ui.
+   La jerarquía se construye con PESOS y TAMAÑOS, no con familias:
+     · .ficha-label → --font-weight-label (800), mayúsculas
+     · .ficha-valor → --font-weight-valor (500)
    ══════════════════════════════════════════════════════════════════════ */
 
 /* ── 5.A · Contenedor principal del panel ── */
 #technical-sidebar {
-    background-color: var(--ux-sidebar-bg) !important;                 /* l. ~225 */
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: sidebar ficha] */
+    background-color: var(--ux-sidebar-bg) !important;
     border-color: var(--ux-sidebar-border) !important;
     color: #0f172a;
 }
@@ -372,12 +454,14 @@ body, button, input, select, textarea {
     background: rgba(148, 163, 184, 0.06);
 }
 .sv-card-header span {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: tarjeta SV] */
     font-size: 12px;
     font-weight: 700;
     color: #1e293b;
 }
 .dark .sv-card-header span { color: #e2e8f0; }
 .sv-card-header a {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: link "Abrir" SV] */
     font-size: 11px;
     font-weight: 600;
     color: #2980b9;
@@ -402,25 +486,26 @@ body, button, input, select, textarea {
 }
 .dark .ficha-celda { border-color: var(--ux-celda-border-dark) !important; }
 
-/* Etiqueta: mayúscula, negrita fuerte, muy oscura → jerarquía clara.
-   Color y peso desde el bloque 1 (--ux-label-color / --font-weight-label). */
+/* [TIPOGRAFÍA: etiqueta de la ficha — hereda --font-ui + peso 800] */
 .ficha-label {
+    font-family: var(--font-ui) !important;
     display: block;
     font-size: 9.5px;
-    font-weight: var(--font-weight-label);     /* l. ~300 */
-    color: var(--ux-label-color);              /* l. ~301 */
+    font-weight: var(--font-weight-label);
+    color: var(--ux-label-color);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 3px;
 }
 .dark .ficha-label { color: var(--ux-label-color-dark); }
 
-/* Valor: gris medio, peso medio → nunca compite con la etiqueta */
+/* [TIPOGRAFÍA: valor de la ficha — hereda --font-ui + peso 500] */
 .ficha-valor {
+    font-family: var(--font-ui) !important;
     display: block;
     font-size: 12.5px;
-    font-weight: var(--font-weight-valor);     /* l. ~315 */
-    color: var(--ux-valor-color);              /* l. ~316 */
+    font-weight: var(--font-weight-valor);
+    color: var(--ux-valor-color);
     letter-spacing: 0.01em;
     word-break: break-word;
 }
@@ -428,29 +513,45 @@ body, button, input, select, textarea {
 
 /* ── 5.D · Botón Exportar PDF (acento desde bloque 1) ── */
 #btn-export-pdf {
-    background: var(--ux-btn-primary-bg) !important;           /* l. ~330 */
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: botón PDF] */
+    background: var(--ux-btn-primary-bg) !important;
     border-radius: 6px;
     letter-spacing: 0.03em;
 }
 #btn-export-pdf:hover {
-    background: var(--ux-btn-primary-bg-hover) !important;     /* l. ~335 */
+    background: var(--ux-btn-primary-bg-hover) !important;
 }
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   6 · PANEL DE ESTADÍSTICAS
+   6 · PANEL DE ESTADÍSTICAS Y WIDGETS
+   ──────────────────────────────────────────────────────────────────────
+   [TIPOGRAFÍA: heredada del body → --font-ui]
+   Los títulos y cifras del panel usan la MISMA familia que el resto del
+   visor. Solo se ajustan PESOS para lograr una jerarquía técnica
+   consistente con la ficha lateral (ver addenda §B al final del archivo).
    ══════════════════════════════════════════════════════════════════════ */
 
-#stats-panel { will-change: transform; }
+#stats-panel {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: panel estadísticas] */
+    will-change: transform;
+}
+#stats-panel h3 {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: títulos stats] */
+}
 
 
 /* ══════════════════════════════════════════════════════════════════════
    7 · LEYENDA
    ══════════════════════════════════════════════════════════════════════ */
 
-#legend-panel { font-size: 11.5px; }
+#legend-panel {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: leyenda] */
+    font-size: 11.5px;
+}
 
 .legend-group-title {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: títulos leyenda] */
     font-size: 9px;
     font-weight: 700;
     text-transform: uppercase;
@@ -483,18 +584,19 @@ html:not(.dark) .maplibregl-popup-anchor-top .maplibregl-popup-tip {
     border-bottom-color: #ffffff !important;
 }
 
-.maplibregl-popup-content { font-family: var(--font-ui) !important; }
+.maplibregl-popup-content {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: popups mapa] */
+}
 
 
 /* ══════════════════════════════════════════════════════════════════════
    9 · SELECCIÓN BBOX (overlay del rectángulo)
-   Colores también configurables: CONFIG.ui.seleccionBBox en config.js.
    ══════════════════════════════════════════════════════════════════════ */
 
 #bbox-rect-overlay {
     position: fixed;
     display: none;
-    border: 1.5px dashed #22d3ee;   /* se sobrescribe con CONFIG.ui.seleccionBBox.color */
+    border: 1.5px dashed #22d3ee;
     background: rgba(34, 211, 238, 0.08);
     pointer-events: none;
     z-index: 30;
@@ -523,14 +625,15 @@ html:not(.dark) .maplibregl-popup-anchor-top .maplibregl-popup-tip {
     .kpi-label  { font-size: 7px !important; letter-spacing: 0.05em !important; }
 }
 
+
 /* ══════════════════════════════════════════════════════════════════════
    ADDENDA v2.2 · Buscador en ficha lateral + tipografía de estadísticas
    ══════════════════════════════════════════════════════════════════════ */
 
-/* ── A · Buscador Nominatim y coordenadas reubicados DENTRO de la ficha lateral ──
-   El buscador y el visor de coordenadas viven ahora en el panel lateral;
-   se adaptan al fondo claro del panel y a su variante oscura (.dark). */
+/* ── A · Buscador Nominatim y coordenadas reubicados DENTRO de la
+        ficha lateral. Todos los controles heredan --font-ui. ── */
 #technical-sidebar .osm-search-input {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: buscador en sidebar] */
     width: 100%;
     background: #f1f5f9;
     border-color: #e2e8f0;
@@ -553,14 +656,26 @@ html:not(.dark) .maplibregl-popup-anchor-top .maplibregl-popup-tip {
     border-color: rgba(148, 163, 184, 0.25) !important;
 }
 
-/* ── B · TIPOGRAFÍA DEL PANEL DE ESTADÍSTICAS (requerimiento 4) ──────────
-   Títulos y valores: estilo técnico, moderno y sutil. Los títulos bajan
-   de bold (700) a semibold (600) y los valores de semibold (600) a
-   medium (500), alineados con la jerarquía tipográfica de la ficha
-   lateral (--font-weight-label / --font-weight-valor del bloque 1). */
+/* ── B · TIPOGRAFÍA DEL PANEL DE ESTADÍSTICAS ──────────────────────────
+   Misma familia (--font-ui), pesos rebajados para una jerarquía técnica
+   coherente con la ficha lateral:
+     · títulos h3     → 600 (semibold)
+     · valores .bold  → 600
+     · .semibold      → 500
+   Nota: NO cambia la familia; solo los pesos. */
 #stats-panel h3 {
+    font-family: var(--font-ui) !important;
     font-weight: 600 !important;
     letter-spacing: 0.05em !important;
 }
-#stats-panel .font-bold { font-weight: 600 !important; }
-#stats-panel .font-semibold { font-weight: 500 !important; }
+#stats-panel .font-bold { font-family: var(--font-ui) !important; font-weight: 600 !important; }
+#stats-panel .font-semibold { font-family: var(--font-ui) !important; font-weight: 500 !important; }
+
+/* ── C · FICHA DINÁMICA — garantiza tipografía única en campos
+        generados por app.js (renderizarFichaGenerica). ── */
+#campos-dinamicos,
+#ficha-arbolado-primaria,
+#ficha-arbolado-secundaria,
+#campos-secundarios {
+    font-family: var(--font-ui) !important;   /* [TIPOGRAFÍA: campos dinámicos] */
+}
