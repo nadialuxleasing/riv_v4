@@ -36,7 +36,7 @@ window.LUX_CONFIG = {
   /* ── 3 · FUENTES DE DATOS (GeoJSON estáticos y Google Sheets para reclamos) ─ */
   fuentes: {
     luminarias:      './luminarias_riv_wgs84.geojson',
-    arbolado:        './arbolES_V2.geojson',
+    arbolado:        './arboles_V2.geojson',
     vialidades:      './vialidad_ej_6.geojson', // Actualizado a vialidad_ej_6
     cordon:          './cordon.geojson',
     banquina_vereda: './banquina_vereda.geojson',
