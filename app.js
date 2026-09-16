@@ -1,5 +1,5 @@
 /* ============================================================================
-   LUX VISION · Núcleo del visor (v2 — refactor)
+   LUX VISION · Núcleo del visor (v2.2 — refactor UI/UX + interacción geométrica)
    ----------------------------------------------------------------------------
    Todo lo municipal vive en `config.js`. Este archivo es agnóstico al municipio.
 
@@ -12,16 +12,16 @@
      05 · Widget de coordenadas en vivo
      06 · Buscador de direcciones (Nominatim / OSM)
      06.B · Geocodificación inversa (clic → dirección en la ficha)
-     07 · Carga de datos GeoJSON + Google Sheets (reclamos en CSV)
+     07 · Carga de datos GeoJSON + Google Sheets (reclamos en CSV) + FALLBACK
      08 · Construcción de capas (simbología 100% desde CONFIG.simbologia)
      09 · Leyenda dinámica (mismos colores que el mapa)
      10 · Interacción con el mapa (click → ficha, Street View, popup)
-     11 · Ficha lateral dinámica (primaria + secundaria desde config)
+     11 · Ficha lateral dinámica (por capa, sin estructuras fijas)
      12 · Branding y fecha de actualización
      13 · Botones de capas del encabezado
      14 · KPIs
-     15 · Filtros por distrito (turf + buffer configurable)
-     16 · Selección espacial por rectángulo (BBOX)
+     15 · Filtros por distrito (turf + buffer configurable + fallback a luminarias)
+     16 · Selección espacial por rectángulo (BBOX con queryRenderedFeatures)
      17 · Panel de estadísticas
      18 · Utilidades de UI
      19 · Exportación PDF
@@ -40,13 +40,13 @@ if (!APP_CONFIG) {
 
 const FUENTES_DATA  = APP_CONFIG.fuentes;
 const CONFIG_CAPAS  = APP_CONFIG.capas;
-const PALETA        = APP_CONFIG.simbologia;        // ← colores únicos (mapa+menús+leyenda)
+const PALETA        = APP_CONFIG.simbologia;
 const CONFIG_UI     = APP_CONFIG.ui;
 
-/** GeoJSON vacío de referencia: estado inicial de cada capa hasta que carga su dato. */
+/** GeoJSON vacío de referencia. */
 const geojsonVacio = { type: 'FeatureCollection', features: [] };
 
-/** Mapas base disponibles en el selector del encabezado. */
+/** Mapas base disponibles. */
 const ESTILOS_MAPA = {
     dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     light: {
@@ -61,8 +61,11 @@ const ESTILOS_MAPA = {
     }
 };
 
-/** IDs de las capas con ficha técnica (todas las de config). */
+/** IDs de las capas con ficha técnica. */
 const capasInteractivas = () => Object.values(CONFIG_CAPAS).map(c => c.id);
+
+/** Capas prioritarias para filtrado por distrito (si el rendimiento es crítico). */
+const CAPAS_PRIORITARIAS = CONFIG_UI.filtradoPrioritario || ['luminarias', 'arbolado'];
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -73,7 +76,6 @@ let estiloActual = localStorage.getItem('map-style') || 'light';
 let modoCalorArbolado = false;
 let filtroCategoriaLuminarias = null;
 
-/** Datos completos por capa (se cargan una sola vez al inicio). */
 let capasData = {
     luminarias: geojsonVacio,
     arbolado: geojsonVacio,
@@ -84,32 +86,25 @@ let capasData = {
     cuneta: geojsonVacio
 };
 
-/** Polígonos de distritos (solo para el filtro; no se dibujan). */
 let distritosData = geojsonVacio;
 
-/** Visibilidad inicial de cada capa en el mapa. */
 const visibilidadCapas = {
     luminarias: true, arbolado: true, vialidades: true,
     reclamos: true, cordon: true, banquina_vereda: true, cuneta: true
 };
 
-/**
- * Datos que se están visualizando AHORA.
- * Cambia con                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              o de distrito o selección BBOX: KPIs y estadísticas
- * leen siempre de acá (no de `capasData`, que siempre tiene el total).
- */
 window.datosActualesParaKPI = capasData;
 
-/** Última operación de filtrado aplicada ('todos' | 'distrito' | 'bbox'). */
 let filtroActivo = { tipo: 'todos', nombre: null, geometria: null };
+
+/** Guarda el feature actualmente seleccionado (para limpiar estados). */
+let featureSeleccionado = null;
 
 
 /* ══════════════════════════════════════════════════════════════════════
    03 · HELPERS
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Devuelve el primer atributo presente entre las variantes indicadas
- *  (tolera diferencias de case y nombres alternativos en los datos). */
 function getCampo(props, camposAlt, def = null) {
     if (!props || !Array.isArray(camposAlt)) return def;
     for (const c of camposAlt) {
@@ -118,12 +113,10 @@ function getCampo(props, camposAlt, def = null) {
     return def;
 }
 
-/** Versión en mayúsculas y sin espacios laterales de `getCampo`. */
 function getCampoUpper(props, campos, def = '') {
     return String(getCampo(props, campos, def)).trim().toUpperCase();
 }
 
-/** Versión numérica de `getCampo` (NaN-safe). */
 function getCampoNumero(props, campos, def = 0) {
     const val = getCampo(props, campos, null);
     if (val === null) return def;
@@ -131,7 +124,6 @@ function getCampoNumero(props, campos, def = 0) {
     return isNaN(num) ? def : num;
 }
 
-/** Busca la entrada de config correspondiente a un layerId del mapa. */
 function getConfigPorCapaId(layerId) {
     for (const key of Object.keys(CONFIG_CAPAS)) {
         if (CONFIG_CAPAS[key].id === layerId) return { key, config: CONFIG_CAPAS[key] };
@@ -139,21 +131,17 @@ function getConfigPorCapaId(layerId) {
     return null;
 }
 
-/** Datos vigentes (filtrados por distrito o BBOX, si hay filtro activo). */
 function datosActuales() {
     return window.datosActualesParaKPI || capasData;
 }
 
-/** Escribe texto en un elemento por ID, si existe. */
 function setTexto(id, valor) {
     const el = document.getElementById(id);
     if (el) el.innerText = valor;
 }
 
-/** Aplica un conjunto de features filtrado a todas las fuentes del mapa,
- *  actualiza el contexto de KPIs y repinta estadísticas si están abiertas.
- *  Es el corazón del flujo de datos: TODO filtro termina llamándolo. */
-function aplicarDatosFiltrados(filtradas, descripcionFiltro) {
+/** Aplica un conjunto filtrado a todas las fuentes y refresca UI. */
+function aplicarDatosFiltrados(filtradas) {
     Object.keys(capasData).forEach(key => {
         const sourceId = `${key}-source`;
         if (map.getSource(sourceId)) map.getSource(sourceId).setData(filtradas[key]);
@@ -164,10 +152,13 @@ function aplicarDatosFiltrados(filtradas, descripcionFiltro) {
     refrescarStatsSiAbierto();
 }
 
-/** Restaura los datos completos en mapa + KPIs. */
 function restaurarDatosCompletos() {
     filtroActivo = { tipo: 'todos', nombre: null, geometria: null };
-    aplicarDatosFiltrados(capasData, 'Todos');
+    aplicarDatosFiltrados(capasData);
+    limpiarSeleccion();
+    resetearFicha();
+    const sel = document.getElementById('filtro-distrito');
+    if (sel) sel.value = 'Todos';
 }
 
 
@@ -180,16 +171,13 @@ const map = new maplibregl.Map({
     style: ESTILOS_MAPA[estiloActual],
     center: APP_CONFIG.municipio.mapaInicial.center,
     zoom: APP_CONFIG.municipio.mapaInicial.zoom,
-    preserveDrawingBuffer: true // requerido para capturar el mapa en el PDF
+    preserveDrawingBuffer: true
 });
 
 const styleSelect = document.getElementById('map-style-select');
 const themeToggleBtn = document.getElementById('theme-toggle');
 let modoVisual = localStorage.getItem('theme-mode') || 'light';
 
-/** Cambia el mapa base y reconstruye las capas cuando el estilo está listo.
- *  FIX: al reconstruir, vuelca SIEMPRE los datos vigentes (filtrados), no
- *  los originales — antes el cambio de estilo perdía el filtro activo. */
 function cambiarEstiloMapa(nuevoEstilo) {
     if (!ESTILOS_MAPA[nuevoEstilo]) return;
     estiloActual = nuevoEstilo;
@@ -199,7 +187,6 @@ function cambiarEstiloMapa(nuevoEstilo) {
     map.once('idle', () => inyectarFuentesYCapas());
 }
 
-/** Aplica el tema claro/oscuro a la UI (clase .dark en <html>). */
 function aplicarModoVisual(modo) {
     modoVisual = modo;
     const esOscuro = modo === 'dark';
@@ -213,14 +200,12 @@ function aplicarModoVisual(modo) {
 }
 aplicarModoVisual(modoVisual);
 
-// Selector de mapa base: claro/oscuro además conmutan el tema de la UI.
 styleSelect.addEventListener('change', (e) => {
     const estilo = e.target.value;
     if (estilo === 'dark' || estilo === 'light') aplicarModoVisual(estilo);
     cambiarEstiloMapa(estilo);
 });
 
-// Botón sol/luna: alterna tema y, si corresponde, también el mapa base.
 themeToggleBtn.addEventListener('click', () => {
     const nuevoModo = modoVisual === 'dark' ? 'light' : 'dark';
     aplicarModoVisual(nuevoModo);
@@ -228,7 +213,6 @@ themeToggleBtn.addEventListener('click', () => {
     if (nuevoModo === 'light' && estiloActual === 'dark') cambiarEstiloMapa('light');
 });
 
-/** Activa/desactiva el heatmap de arbolado (colores desde PALETA). */
 function aplicarModoCalorArbolado(activo) {
     modoCalorArbolado = Boolean(activo);
     if (map.getLayer('arbolado-heatmap-layer')) {
@@ -246,8 +230,6 @@ function aplicarModoCalorArbolado(activo) {
    05 · WIDGET DE COORDENADAS EN VIVO
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Muestra Lat/Lon del cursor en el recuadro del encabezado.
- *  Formato y decimales desde CONFIG_UI.coordenadas (sin hardcodear). */
 function inicializarWidgetCoordenadas() {
     const el = document.getElementById('coords-value');
     if (!el) return;
@@ -258,8 +240,6 @@ function inicializarWidgetCoordenadas() {
 
     map.on('mousemove', (e) => { el.textContent = formatear(e.lngLat); });
     map.on('mouseout',  () => { el.textContent = '— · —'; });
-
-    // Al hacer click, la coordenada queda fijada (útil para reportar).
     map.on('click', (e) => { el.textContent = formatear(e.lngLat); });
 }
 
@@ -268,9 +248,6 @@ function inicializarWidgetCoordenadas() {
    06 · BUSCADOR DE DIRECCIONES (NOMINATIM / OSM)
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Integra el buscador del encabezado con la API de Nominatim (OSM).
- *  Flujo: input → debounce → fetch → lista de resultados → flyTo + marcador.
- *  URL, parámetros y debounce se configuran en CONFIG_UI.busqueda. */
 function inicializarBuscadorOSM() {
     const input   = document.getElementById('osm-search-input');
     const resultados = document.getElementById('osm-search-results');
@@ -341,18 +318,11 @@ function inicializarBuscadorOSM() {
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   06.B · GEOCODIFICACIÓN INVERSA (clic → dirección en la ficha lateral)
-   ──────────────────────────────────────────────────────────────────────
-   Flujo: clic en cualquier punto del mapa → la coordenada se fija en la
-   ficha (#coords-click-value) y se consulta Nominatim reverse para traer
-   la dirección automáticamente (#info-ubicacion). Activo/desactivable en
-   CONFIG.ui.busqueda.reverseGeocode (config.js).
+   06.B · GEOCODIFICACIÓN INVERSA
    ══════════════════════════════════════════════════════════════════════ */
 
 let consultaInversaEnCurso = false;
 
-/** Fija la coordenada del último clic en la ficha y dispara la consulta
- *  inversa. Se invoca desde el handler global de clic del mapa. */
 function mostrarClicEnFicha(lngLat) {
     const el = document.getElementById('coords-click-value');
     if (el) {
@@ -362,8 +332,6 @@ function mostrarClicEnFicha(lngLat) {
     consultaInversaNominatim(lngLat);
 }
 
-/** Reverse geocoding con guarda de concurrencia (un solo request a la vez,
- *  para no saturar el servicio público de Nominatim). */
 function consultaInversaNominatim(lngLat) {
     if (!CONFIG_UI.busqueda.reverseGeocode || consultaInversaEnCurso) return;
     const cont = document.getElementById('info-ubicacion');
@@ -395,10 +363,9 @@ function consultaInversaNominatim(lngLat) {
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   07 · CARGA DE DATOS GEOJSON + GOOGLE SHEETS (reclamos en CSV)
+   07 · CARGA DE DATOS (CON FALLBACK PARA RECLAMOS)
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Valida que la respuesta sea un FeatureCollection bien formado. */
 function normalizarGeoJSON(data, key) {
     if (!data || data.type !== 'FeatureCollection' || !Array.isArray(data.features)) {
         console.error(`[LUX] GeoJSON inválido en la fuente "${key}"`, data);
@@ -407,8 +374,6 @@ function normalizarGeoJSON(data, key) {
     return data;
 }
 
-/* ── Parser CSV tolerante: comillas dobles, comas internas y saltos CRLF.
-     Devuelve un array de filas (array de strings), sin procesar tipos. ── */
 function parsearCSV(texto) {
     const filas = [];
     let fila = [], campo = '', entreComillas = false;
@@ -416,7 +381,7 @@ function parsearCSV(texto) {
         const ch = texto[i];
         if (entreComillas) {
             if (ch === '"') {
-                if (texto[i + 1] === '"') { campo += '"'; i++; }  // comilla escapada ""
+                if (texto[i + 1] === '"') { campo += '"'; i++; }
                 else entreComillas = false;
             } else campo += ch;
         } else if (ch === '"') entreComillas = true;
@@ -432,11 +397,6 @@ function parsearCSV(texto) {
     return filas;
 }
 
-/** Convierte el CSV del Google Sheet en un FeatureCollection GeoJSON.
- *  · Coordenadas: primer par de columnas que coincida con las variantes de
- *    CONFIG.reclamosCsv.camposCoordenadas (acepta coma decimal).
- *  · Campos: los 7 funcionales se mapean a claves canónicas que consumen
- *    luego la ficha lateral, el popup y los KPI (case-insensitive). */
 function csvReclamosAGeoJSON(texto) {
     const cfgCsv = APP_CONFIG.reclamosCsv || {};
     const filas = parsearCSV(texto);
@@ -462,8 +422,7 @@ function csvReclamosAGeoJSON(texto) {
     const iSol  = idxDe(APP_CONFIG.popupReclamos.fechaSolucion);
 
     if (iLat < 0 || iLng < 0) {
-        console.warn('[LUX] El CSV de reclamos no expone columnas de coordenadas reconocibles. ' +
-                     'Agregue los nombres exactos en CONFIG.reclamosCsv.camposCoordenadas.');
+        console.warn('[LUX] CSV de reclamos sin columnas de coordenadas reconocibles.');
         return geojsonVacio;
     }
 
@@ -472,7 +431,7 @@ function csvReclamosAGeoJSON(texto) {
     filas.slice(1).forEach(fila => {
         const lat = parseFloat(val(fila, iLat).replace(',', '.'));
         const lng = parseFloat(val(fila, iLng).replace(',', '.'));
-        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return; // fila sin ubicación válida
+        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
         features.push({
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [lng, lat] },
@@ -484,14 +443,35 @@ function csvReclamosAGeoJSON(texto) {
         });
     });
 
-    console.info(`[LUX] Reclamos integrados desde Google Sheets: ${features.length} registros con coordenadas.`);
+    console.info(`[LUX] Reclamos integrados: ${features.length} registros.`);
     return { type: 'FeatureCollection', features };
 }
 
-/** Descarga el Sheet (CSV) o un GeoJSON alternativo y normaliza el resultado
- *  al mismo contrato que el resto de fuentes ({ key: 'reclamos', data }). */
+/**
+ * Carga los reclamos desde Google Sheets con FALLBACK automático a un
+ * GeoJSON local (`reclamos_rv.geojson`) si la petición remota falla
+ * por red, CORS, HTTP != 200 o payload inválido.
+ */
 function cargarReclamosDesdeSheets() {
     const url = APP_CONFIG.reclamosCsv?.url || FUENTES_DATA.reclamos;
+    const fallbackUrl = APP_CONFIG.reclamosCsv?.fallbackUrl
+        || FUENTES_DATA.reclamosFallback
+        || './reclamos_rv.geojson';
+
+    const cargarFallback = (motivo) => {
+        console.warn(`[LUX] Reclamos: usando fallback local "${fallbackUrl}" — motivo: ${motivo}`);
+        return fetch(fallbackUrl, { cache: 'no-store' })
+            .then(res => {
+                if (!res.ok) throw new Error(`Fallback HTTP ${res.status}`);
+                return res.json();
+            })
+            .then(json => ({ key: 'reclamos', data: normalizarGeoJSON(json, 'reclamos') }))
+            .catch(err => {
+                console.error('[LUX] Fallback de reclamos también falló', err);
+                return { key: 'reclamos', data: geojsonVacio };
+            });
+    };
+
     return fetch(url, { cache: 'no-store' })
         .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -502,29 +482,30 @@ function cargarReclamosDesdeSheets() {
             const data = (typeof payload === 'string')
                 ? csvReclamosAGeoJSON(payload)
                 : normalizarGeoJSON(payload, 'reclamos');
+
+            if (!data.features || data.features.length === 0) {
+                return cargarFallback('CSV remoto sin features válidas');
+            }
+            console.info(`[LUX] Reclamos remotos OK: ${data.features.length} registros.`);
             return { key: 'reclamos', data };
         })
-        .catch(error => {
-            console.error('[LUX] No se pudo integrar Google Sheets (reclamos)', error);
-            return { key: 'reclamos', data: geojsonVacio };
-        });
+        .catch(error => cargarFallback(error?.message || String(error)));
 }
 
-/** Descarga todas las fuentes en paralelo y arranca el visor.
- *  Las solicitudes/reclamos pasan por su loader dedicado (Sheets CSV);
- *  el resto de las capas se cargan como GeoJSON estático. */
 function cargarTodosLosGeoJSON() {
-    const peticiones = Object.keys(FUENTES_DATA).map(key =>
-        key === 'reclamos'
-            ? cargarReclamosDesdeSheets()
-            : fetch(FUENTES_DATA[key], { cache: 'no-store' })
-                .then(res => { if (!res.ok) throw new Error(`${res.status}`); return res.json(); })
-                .then(json => ({ key, data: normalizarGeoJSON(json, key) }))
-                .catch(error => {
-                    console.error(`[LUX] No se pudo cargar la fuente "${key}"`, error);
-                    return { key, data: geojsonVacio };
-                })
-    );
+    const peticiones = Object.keys(FUENTES_DATA).map(key => {
+        if (key === 'reclamos' || key === 'reclamosFallback') return null;
+        return fetch(FUENTES_DATA[key], { cache: 'no-store' })
+            .then(res => { if (!res.ok) throw new Error(`${res.status}`); return res.json(); })
+            .then(json => ({ key, data: normalizarGeoJSON(json, key) }))
+            .catch(error => {
+                console.error(`[LUX] No se pudo cargar la fuente "${key}"`, error);
+                return { key, data: geojsonVacio };
+            });
+    }).filter(Boolean);
+
+    // Reclamos: loader dedicado con fallback.
+    peticiones.push(cargarReclamosDesdeSheets());
 
     Promise.all(peticiones).then(resultados => {
         resultados.forEach(res => {
@@ -547,12 +528,8 @@ function cargarTodosLosGeoJSON() {
 
 /* ══════════════════════════════════════════════════════════════════════
    08 · CONSTRUCCIÓN DE CAPAS
-   ─────────────────────────────────────────────────────────────────────
-   Simbología 100% derivada de PALETA (config.simbologia). Ningún color
-   está hardcodeado: mapa, desplegables y leyenda comparten el mismo origen.
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Expresión MapLibre de color: LED / sodio / otras, desde PALETA. */
 function colorPorTecnologiaLuminaria() {
     const campos = CONFIG_CAPAS.luminarias.simbologiaCampo;
     const valor = ['upcase', ['to-string', ['coalesce', ...campos.map(c => ['get', c]), '']]];
@@ -562,7 +539,6 @@ function colorPorTecnologiaLuminaria() {
         PALETA.luminarias.OTROS];
 }
 
-/** Expresión MapLibre de color por estado forestal, desde PALETA. */
 function colorPorEstadoArbolado() {
     const campo = CONFIG_CAPAS.arbolado.kpis.estado.campo;
     return ['match', ['upcase', ['coalesce', ...campo.map(c => ['get', c]), 'OTROS']],
@@ -572,16 +548,10 @@ function colorPorEstadoArbolado() {
         PALETA.arbolado.OTROS];
 }
 
-/**
- * Crea las fuentes y capas del mapa (si aún no existen).
- * Se vuelve a ejecutar tras cada cambio de mapa base (MapLibre destruye
- * las capas al cambiar de estilo). Vuelca SIEMPRE `datosActuales()`.
- */
 function inyectarFuentesYCapas() {
     const vis = key => visibilidadCapas[key] ? 'visible' : 'none';
-    const datos = datosActuales(); // FIX: respeta el filtro activo al cambiar estilo
+    const datos = datosActuales();
 
-    // ── Lateral vial: cordón / banquina-vereda / cuneta (colores PALETA) ──
     agregarCapaLinea('cordon', 'cordon-source', 'cordon-layer',
         { color: PALETA.lateralVial.CORDON, ancho: 1.8, opacidad: 0.82 });
     agregarCapaLinea('banquina_vereda', 'banquina-vereda-source', 'banquina-vereda-layer',
@@ -589,24 +559,31 @@ function inyectarFuentesYCapas() {
     agregarCapaLinea('cuneta', 'cuneta-source', 'cuneta-layer',
         { color: PALETA.lateralVial.CUNETA, ancho: 1.5, opacidad: 0.78 });
 
-    // ── Vialidades: color según superficie, desde PALETA.vialidades ──
+    // ── Vialidades: color por JURISDICCIÓN (DPV / MUNICIPAL / OTRO) ────
+
     if (!map.getSource('vialidades-source')) {
         map.addSource('vialidades-source', { type: 'geojson', data: datos.vialidades });
         map.addLayer({
             id: 'vialidades-layer', type: 'line', source: 'vialidades-source',
             paint: {
-                'line-width': 3.5,
-                'line-color': ['match', ['upcase', ['coalesce', ['get', 'superficie'], ['get', 'SUPERFICIE'], 'SIN DATO']],
-                    'PAVIMENTADO', PALETA.vialidades.PAVIMENTADO,
-                    'CONSOLIDADA', PALETA.vialidades.CONSOLIDADA,
-                    'TIERRA', PALETA.vialidades.TIERRA,
-                    PALETA.vialidades['SIN DATO']]
+                'line-width': 3.2,
+                'line-color': [
+                    'match',
+                    ['upcase', ['coalesce',
+                        ['get', 'zona'], ['get', 'ZONA'],
+                        ['get', 'jurisdiccion'], ['get', 'JURISDICCION'],
+                        ''
+                    ]],
+                    'MUNICIPAL', PALETA.vialidadesPorZona.MUNICIPAL,
+                    'MUN',       PALETA.vialidadesPorZona.MUNICIPAL,
+                    'DPV',       PALETA.vialidadesPorZona.DPV,
+                    PALETA.vialidadesPorZona.OTRO
+                ]
             },
             layout: { visibility: vis('vialidades'), 'line-cap': 'round', 'line-join': 'round' }
         });
     }
 
-    // ── Arbolado: puntos por estado + heatmap (colores desde PALETA) ──
     if (!map.getSource('arbolado-source')) {
         map.addSource('arbolado-source', { type: 'geojson', data: datos.arbolado });
         const hm = PALETA.heatmapArbolado;
@@ -633,7 +610,6 @@ function inyectarFuentesYCapas() {
         });
     }
 
-    // ── Luminarias: color según tecnología (PALETA.luminarias) ──
     if (!map.getSource('luminarias-source')) {
         map.addSource('luminarias-source', { type: 'geojson', data: datos.luminarias });
         map.addLayer({
@@ -646,12 +622,6 @@ function inyectarFuentesYCapas() {
         });
     }
 
-    // ── Solicitudes / reclamos ─────────────────────────────────────────
-    // SIMBOLOGÍA DE RECLAMOS — definida y modificable ÚNICAMENTE en
-    // config.js → sección 6 (CONFIG.simbologia.reclamos: HALO, TRAZO, TEXTO).
-    // Diseño profesional de ALTA VISIBILIDAD: halo semitransparente con blur
-    // leve + doble contorno blanco de alta opacidad + glifo "···" marcado
-    // con halo tipográfico. Nada de valores dispersos: todo desde PALETA.
     if (!map.getSource('reclamos-source')) {
         map.addSource('reclamos-source', { type: 'geojson', data: datos.reclamos });
         map.addLayer({
@@ -675,7 +645,6 @@ function inyectarFuentesYCapas() {
     }
 }
 
-/** Helper: fuente + capa lineal genérica con estilo simple. */
 function agregarCapaLinea(dataKey, sourceId, layerId, estilo) {
     if (map.getSource(sourceId)) return;
     map.addSource(sourceId, { type: 'geojson', data: datosActuales()[dataKey] });
@@ -689,12 +658,8 @@ function agregarCapaLinea(dataKey, sourceId, layerId, estilo) {
 
 /* ══════════════════════════════════════════════════════════════════════
    09 · LEYENDA DINÁMICA
-   ─────────────────────────────────────────────────────────────────────
-   Se genera desde PALETA: garantiza que leyenda, mapa y desplegables
-   muestren EXACTAMENTE los mismos colores por categoría.
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Pinta la leyenda completa leyendo CONFIG.simbologia. */
 function renderizarLeyenda() {
     const cont = document.getElementById('legend-body');
     if (!cont) return;
@@ -715,7 +680,12 @@ function renderizarLeyenda() {
         ${filaPunto(S.arbolado.REGULAR, 'Regular')}
         ${filaPunto(S.arbolado.MALO, 'Malo')}
         <div class="legend-group-title">Vialidad</div>
-        ${filaLinea(S.vialidades.PAVIMENTADO, 'PAVIMENTADO')}
+                <div class="legend-group-title">Vialidad (por jurisdicción)</div>
+        ${filaLinea(PALETA.vialidadesPorZona.MUNICIPAL, 'Municipal')}
+        ${filaLinea(PALETA.vialidadesPorZona.DPV, 'DPV')}
+        ${filaLinea(PALETA.vialidadesPorZona.OTRO, 'Otro')}
+        <div class="legend-group-title">Lateral Vial</div>
+
         ${filaLinea(S.lateralVial.CORDON, 'Cordón', 2)}
         ${filaLinea(S.lateralVial.BANQUINA_VEREDA, 'Banquina / Vereda', 2)}
         ${filaLinea(S.lateralVial.CUNETA, 'Cuneta', 2)}
@@ -726,8 +696,6 @@ function renderizarLeyenda() {
         </div>`;
 }
 
-/** Sincroniza los puntos de color de los desplegables KPI con PALETA.
- *  Requiere que los <span> de punto tengan data-sym="luminarias:LED" etc. */
 function sincronizarColoresDesplegables() {
     document.querySelectorAll('[data-sym]').forEach(el => {
         const [grupo, categoria] = el.dataset.sym.split(':');
@@ -746,35 +714,35 @@ function sincronizarColoresDesplegables() {
    10 · INTERACCIÓN CON EL MAPA
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Registra UNA VEZ los handlers de clic y cursor (sobre el mapa, no por
- *  capa): así no se duplican cuando cambia el mapa base. */
 let interaccionRegistrada = false;
+
 function registrarInteraccionMapa() {
     if (interaccionRegistrada) return;
     interaccionRegistrada = true;
 
     map.on('click', (e) => {
-        // En modo BBOX el click lo gestiona la herramienta de selección.
         if (herramientaBbox.activa) return;
 
-        // Cualquier clic: la coordenada y su dirección inversa van a la ficha.
         mostrarClicEnFicha(e.lngLat);
 
         const features = map.queryRenderedFeatures(e.point, { layers: capasInteractivas() });
+
+        // ── DESELECCIÓN: clic en área libre sin entidades ──
         if (!features || features.length === 0) {
             limpiarSeleccion();
+            resetearFicha();
             return;
         }
-        const feature = features[0];
 
-        // Solicitudes: además del panel lateral, abren su popup de detalle.
+        const feature = features[0];
+        featureSeleccionado = feature;
+
         if (feature.layer.id === CONFIG_CAPAS.reclamos.id) {
             abrirPopupReclamo(feature);
         }
         mostrarFicha(feature);
     });
 
-    // Cursor de puntero sobre cualquier elemento interactivo.
     map.on('mousemove', (e) => {
         if (herramientaBbox.activa) return;
         const features = map.queryRenderedFeatures(e.point, { layers: capasInteractivas() });
@@ -782,7 +750,7 @@ function registrarInteraccionMapa() {
     });
 }
 
-/** Completa la ficha técnica con los atributos del feature seleccionado. */
+/** Selecciona la ficha lateral del feature clicado. */
 function mostrarFicha(feature) {
     const props = feature.properties || {};
     const configInfo = getConfigPorCapaId(feature.layer.id);
@@ -792,7 +760,6 @@ function mostrarFicha(feature) {
     setTexto('info-id', getCampo(props, config.idCampo, 'N/A'));
     setTexto('info-elemento', config.elementoFijo || getCampo(props, ['elemento', 'ELEMENTO'], '-'));
 
-    // Arbolado usa la ficha estructurada (8 campos + "ver más"); el resto, la genérica.
     if (key === 'arbolado' && config.fichaPrimaria) {
         renderizarFichaArbolado(props, config);
     } else {
@@ -802,33 +769,72 @@ function mostrarFicha(feature) {
     actualizarStreetView(feature);
 }
 
-/** Ficha genérica (luminarias, vialidades, lateral vial, solicitudes):
- *  recorre config.camposFicha y escribe cada par etiqueta/valor. */
+/**
+ * FICHA DINÁMICA POR CAPA (requerimiento 5).
+ * Renderiza SOLO los campos de la capa seleccionada dentro de
+ * `#campos-dinamicos`, limpiando el contenedor en cada llamada para
+ * evitar residuos de la selección anterior.
+ */
 function renderizarFichaGenerica(props, config) {
-    (config.camposFicha || []).forEach(([idInfo, idLabel, camposAlt, textoLabel]) => {
-        setCampoFicha(idInfo, idLabel, getCampo(props, camposAlt, '-'), textoLabel);
-    });
-    // Oculta el bloque estructurado del arbolado si venía visible.
+    const cont = document.getElementById('campos-dinamicos');
+    if (!cont) return;
+
+    // 1) Limpieza total del contenedor dinámico (evita campos residuales).
+    cont.innerHTML = '';
+
+    // 2) Ocultar la ficha estructurada del arbolado si estaba visible.
     const bloqueArb = document.getElementById('ficha-arbolado');
     if (bloqueArb) bloqueArb.classList.add('hidden');
-    const bloqueGenerico = document.getElementById('campos-secundarios');
-    if (bloqueGenerico) bloqueGenerico.classList.remove('hidden');
+
+    // 3) Render de cada campo del config de la capa actual.
+    const celda = (textoLabel, valor) => `
+        <div class="ficha-celda border-b border-r border-slate-200 dark:border-slate-800">
+            <span class="ficha-label">${textoLabel}</span>
+            <span class="ficha-valor">${String(valor)}</span>
+        </div>`;
+
+    const renderCampo = ([, , camposAlt, textoLabel]) => {
+        const valor = getCampo(props, camposAlt, null);
+        const sinDato = valor === null || valor === undefined || valor === ''
+            || valor === 'null' || valor === 'Sin Dato' || valor === 'N/A';
+        return sinDato ? '' : celda(textoLabel, valor);
+    };
+
+    // Primarios (siempre visibles).
+    cont.insertAdjacentHTML('beforeend',
+        (config.camposFicha || []).map(renderCampo).join(''));
+
+    // Secundarios (acordeón "Ver más campos").
+    const contSec = document.getElementById('campos-secundarios');
+    if (contSec) {
+        contSec.innerHTML = (config.camposSecundarios || []).map(renderCampo).join('');
+        contSec.classList.toggle('hidden', !contSec.innerHTML.trim());
+    }
+
+    // Reset visual del acordeón.
+    const label = document.getElementById('label-ver-mas');
+    const chevron = document.getElementById('chevron-ver-mas');
+    if (label) label.textContent = 'Ver más campos';
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
 }
 
 /**
- * Ficha de arbolado estructurada: exactamente los 8 campos principales
- * (config.fichaPrimaria) y, bajo "Ver más campos", config.fichaSecundaria.
- * Se renderiza dinámicamente: no hay HTML hardcodeado de campos.
+ * FICHA ESTRUCTURADA DEL ARBOLADO (8 campos + "ver más").
+ * Se renderiza en los contenedores dedicados, ocultando el dinámico.
  */
 function renderizarFichaArbolado(props, config) {
     const bloqueArb = document.getElementById('ficha-arbolado');
-    const bloqueGenerico = document.getElementById('campos-secundarios');
+    const contDinamico = document.getElementById('campos-dinamicos');
+    const contSec = document.getElementById('campos-secundarios');
     if (!bloqueArb) return;
-    if (bloqueGenerico) bloqueGenerico.classList.add('hidden');
+
+    if (contDinamico) contDinamico.innerHTML = '';
+    if (contSec) { contSec.innerHTML = ''; contSec.classList.add('hidden'); }
+
     bloqueArb.classList.remove('hidden');
 
     const celda = (etiqueta, valor) => `
-        <div class="ficha-celda">
+        <div class="ficha-celda border-b border-r border-slate-200 dark:border-slate-800">
             <span class="ficha-label">${etiqueta}</span>
             <span class="ficha-valor">${(valor !== null && valor !== '') ? valor : '-'}</span>
         </div>`;
@@ -838,23 +844,63 @@ function renderizarFichaArbolado(props, config) {
 
     document.getElementById('ficha-arbolado-secundaria').innerHTML =
         config.fichaSecundaria.map(c => celda(c.etiqueta, getCampo(props, c.campos, null))).join('');
+
+    // Reset visual del acordeón (aplica al panel de arbolado).
+    const label = document.getElementById('label-ver-mas');
+    const chevron = document.getElementById('chevron-ver-mas');
+    if (label) label.textContent = 'Ver más campos';
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
 }
 
-/** Escribe un campo de la ficha genérica y lo oculta si no tiene dato. */
-function setCampoFicha(idInfo, idLabel, valor, textoLabel) {
-    const elInfo = document.getElementById(idInfo);
-    const elLabel = document.getElementById(idLabel);
-    if (elInfo) elInfo.innerText = (valor && valor !== '') ? valor : '-';
-    if (elLabel && textoLabel) elLabel.innerText = textoLabel;
+/**
+ * RESETEO DE LA FICHA LATERAL: borra cualquier residuo de la selección
+ * previa, vuelve al estado neutro y oculta los bloques dinámicos.
+ */
+function resetearFicha() {
+    featureSeleccionado = null;
 
-    const sinDato = !valor || valor === '-' || valor === 'Sin Dato' || valor === 'N/A';
-    if (elInfo) {
-        elInfo.classList.toggle('hidden', sinDato);
-        if (elLabel) elLabel.classList.toggle('hidden', sinDato);
+    setTexto('info-id', '-');
+    setTexto('info-elemento', '-');
+
+    const contDinamico = document.getElementById('campos-dinamicos');
+    if (contDinamico) contDinamico.innerHTML = '';
+
+    const contSec = document.getElementById('campos-secundarios');
+    if (contSec) { contSec.innerHTML = ''; contSec.classList.add('hidden'); }
+
+    const bloqueArb = document.getElementById('ficha-arbolado');
+    if (bloqueArb) bloqueArb.classList.add('hidden');
+    const arbPrim = document.getElementById('ficha-arbolado-primaria');
+    const arbSec  = document.getElementById('ficha-arbolado-secundaria');
+    if (arbPrim) arbPrim.innerHTML = '';
+    if (arbSec)  { arbSec.innerHTML = ''; arbSec.classList.add('hidden'); }
+
+    const iframe = document.getElementById('street-view-frame');
+    const ph = document.getElementById('sv-placeholder');
+    if (iframe) { iframe.src = ''; iframe.classList.add('hidden'); }
+    if (ph) ph.classList.remove('hidden');
+
+    const btnSv = document.getElementById('btn-sv-external');
+    if (btnSv) {
+        btnSv.href = '#';
+        btnSv.classList.add('pointer-events-none', 'opacity-50');
     }
+
+    const ubic = document.getElementById('info-ubicacion');
+    if (ubic) { ubic.textContent = ''; ubic.classList.add('hidden'); }
+
+    const coordClick = document.getElementById('coords-click-value');
+    if (coordClick) coordClick.textContent = '— · —';
+
+    window.activoSeleccionadoLat = null;
+    window.activoSeleccionadoLon = null;
+
+    const label = document.getElementById('label-ver-mas');
+    const chevron = document.getElementById('chevron-ver-mas');
+    if (label) label.textContent = 'Ver más campos';
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
 }
 
-/** Punto representativo del feature (para Street View y el marcador). */
 function coordsDelFeature(feature) {
     const geom = feature.geometry;
     if (!geom) return null;
@@ -865,7 +911,6 @@ function coordsDelFeature(feature) {
     return null;
 }
 
-/** Carga Street View y el marcador pulsante en la posición del feature. */
 function actualizarStreetView(feature) {
     const coords = coordsDelFeature(feature);
     if (!coords) return;
@@ -894,7 +939,6 @@ function actualizarStreetView(feature) {
     }
 }
 
-/** Marcador de selección: punto con halo y anillo (colores desde PALETA). */
 function destacarPuntoEnMapa(lng, lat) {
     const sourceId = 'source-seleccion-activo';
     const punto = {
@@ -929,7 +973,6 @@ function destacarPuntoEnMapa(lng, lat) {
     });
 }
 
-/** Quita el marcador de selección (clic en zona sin elementos). */
 function limpiarSeleccion() {
     const sourceId = 'source-seleccion-activo';
     if (map.getSource(sourceId)) {
@@ -942,7 +985,6 @@ function limpiarSeleccion() {
    11 · POPUP DE SOLICITUDES
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Popup con el detalle del reclamo, con los campos definidos en config. */
 function abrirPopupReclamo(feature) {
     const props = feature.properties || {};
     const coords = coordsDelFeature(feature) || [];
@@ -982,7 +1024,6 @@ function abrirPopupReclamo(feature) {
    12 · BRANDING Y FECHA DE ACTUALIZACIÓN
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Título y logos desde config: un solo lugar para cambiar la identidad. */
 function aplicarConfiguracionMunicipal() {
     const { municipio } = APP_CONFIG;
     document.title = `Lux Vision — ${municipio.tituloAplicacion}`;
@@ -992,15 +1033,18 @@ function aplicarConfiguracionMunicipal() {
         h1.innerHTML = `${municipio.tituloAplicacion} <span class="text-slate-500 mx-1.5">•</span> Municipio de ${municipio.nombre}`;
     }
 
-    const enlaces = document.querySelectorAll('header a');
-    const imagenes = document.querySelectorAll('header a img');
-    if (enlaces[0]) enlaces[0].href = municipio.branding.logoLux.href;
-    if (imagenes[0]) imagenes[0].src = municipio.branding.logoLux.src;
-    if (enlaces[1]) enlaces[1].href = municipio.branding.logoMunicipio.href;
-    if (imagenes[1]) imagenes[1].src = municipio.branding.logoMunicipio.src;
+    // Asignación por ID (más robusto que por orden de querySelectorAll).
+    const brandLux = document.getElementById('brand-lux');
+    const brandMun = document.getElementById('brand-municipio');
+    if (brandLux) brandLux.href = municipio.branding.logoLux.href;
+    if (brandMun) brandMun.href = municipio.branding.logoMunicipio.href;
+
+    const imgLux = brandLux?.querySelector('img');
+    const imgMun = brandMun?.querySelector('img');
+    if (imgLux) imgLux.src = municipio.branding.logoLux.src;
+    if (imgMun) imgMun.src = municipio.branding.logoMunicipio.src;
 }
 
-/** Fecha más reciente entre las luminarias (formato dd/mm/aaaa). */
 function actualizarFechaDesdeCapas() {
     const camposFecha = APP_CONFIG.camposGlobales.fechaActualizacion;
     let fechaMax = null;
@@ -1035,8 +1079,6 @@ function actualizarFechaDesdeCapas() {
    13 · BOTONES DE CAPAS DEL ENCABEZADO
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Cada KPI del encabezado apaga/enciende su grupo de capas.
- *  El botón "TODAS" alterna el estado conjunto. */
 function configurarBotonesPrenderApagar() {
     const definiciones = {
         luminarias:  { btn: 'btn-mod-luminarias', layers: ['luminarias-layer'] },
@@ -1104,12 +1146,10 @@ function configurarBotonesPrenderApagar() {
    14 · KPIs
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Recalcula todos los indicadores del encabezado sobre los datos vigentes
- *  (filtrados por distrito o BBOX si hay un filtro activo). */
 function calcularKPIs() {
     const datos = datosActuales();
 
-    // ── Luminarias: total + desglose por tecnología ──
+    // ── Luminarias ──
     const luminarias = datos.luminarias?.features || [];
     const totalLum = luminarias.length;
     const camposTec = CONFIG_CAPAS.luminarias?.kpis?.tecnologia?.campo
@@ -1127,7 +1167,7 @@ function calcularKPIs() {
     setTexto('kpi-sodio', `${sodio.toLocaleString()} (${pct(sodio, totalLum)})`);
     setTexto('kpi-lum-otros', `${otrosLum.toLocaleString()} (${pct(otrosLum, totalLum)})`);
 
-    // ── Arbolado: total + desglose por estado ──
+    // ── Arbolado ──
     const arbolado = datos.arbolado?.features || [];
     const campoEstado = CONFIG_CAPAS.arbolado?.kpis?.estado?.campo || ['estado_s', 'ESTADO_S', 'ESTADO'];
     const estados = { BUENO: 0, REGULAR: 0, MALO: 0, OTROS: 0 };
@@ -1144,7 +1184,7 @@ function calcularKPIs() {
         setTexto(id, `${estados[k].toLocaleString()} (${pct(estados[k], arbolado.length)})`);
     });
 
-    // ── Vialidades: kilómetros por tipo de superficie ──
+    // ── Vialidades por superficie ──
     const viales = datos.vialidades?.features || [];
     const cfgVial = CONFIG_CAPAS.vialidades?.kpis?.superficie || {};
     const kmVial = { PAVIMENTADO: 0, CONSOLIDADA: 0, TIERRA: 0, 'SIN DATO': 0 };
@@ -1152,7 +1192,7 @@ function calcularKPIs() {
         const props = f.properties || {};
         const sup = getCampoUpper(props, cfgVial.campo || ['superficie', 'SUPERFICIE'], 'SIN DATO');
         const km = getCampoNumero(props, cfgVial.campoKm || ['km', 'KM'], 0);
-        if (sup.includes('PAVIMENTADo')) kmVial.PAVIMENTADO += km;
+        if (sup.includes('PAVIMENTADO')) kmVial.PAVIMENTADO += km;
         else if (sup.includes('CONSOLIDADA')) kmVial.CONSOLIDADA += km;
         else if (sup.includes('TIERRA')) kmVial.TIERRA += km;
         else kmVial['SIN DATO'] += km;
@@ -1164,7 +1204,7 @@ function calcularKPIs() {
     setTexto('kpi-vial-tierra', `${kmVial.TIERRA.toFixed(1)} km`);
     setTexto('kpi-vial-sd', `${kmVial['SIN DATO'].toFixed(1)} km`);
 
-    // ── Vialidades: kilómetros por zona / administración (DPV / Municipal / Otro) ──
+    // ── Vialidades por zona ──
     const cfgZonaVial = CONFIG_CAPAS.vialidades?.kpis?.zona;
     if (cfgZonaVial) {
         const kmZona = { DPV: 0, MUNICIPAL: 0, OTRO: 0 };
@@ -1181,7 +1221,7 @@ function calcularKPIs() {
         setTexto('kpi-vial-otro', `${kmZona.OTRO.toFixed(1)} km`);
     }
 
-    // ── Lateral vial: km con cordón / banquina-vereda / cuneta ──
+    // ── Lateral vial ──
     const kmCordon = sumarKmPresencia(datos, 'cordon');
     const kmBanq = sumarKmPresencia(datos, 'banquina_vereda');
     const kmCuneta = sumarKmPresencia(datos, 'cuneta');
@@ -1190,7 +1230,7 @@ function calcularKPIs() {
     setTexto('kpi-banquina-con', `${kmBanq.toFixed(1)} km`);
     setTexto('kpi-cuneta-con', `${kmCuneta.toFixed(1)} km`);
 
-    // ── Solicitudes: total + por tipo ──
+    // ── Solicitudes ──
     const reclamos = datos.reclamos?.features || [];
     const campoTipoRec = CONFIG_CAPAS.reclamos?.kpis?.tipo?.campo || ['TIPO_S', 'tipo_s'];
     const rec = { INFRA: 0, MANT: 0, OBRA: 0, LED: 0, REP: 0 };
@@ -1210,13 +1250,10 @@ function calcularKPIs() {
     setTexto('kpi-rec-rep', rec.REP.toLocaleString());
 }
 
-/** Porcentaje con un decimal y formato "xx.x%". */
 function pct(parte, total) {
     return total ? ((parte / total) * 100).toFixed(1) + '%' : '0%';
 }
 
-/** Suma de kilómetros donde el campo de presencia coincide con el valor
- *  esperado (p. ej. CORDON === 'SI'), según la config de la capa. */
 function sumarKmPresencia(datos, capaKey) {
     const cfg = CONFIG_CAPAS[capaKey]?.kpis?.presencia;
     if (!cfg) return 0;
@@ -1229,23 +1266,11 @@ function sumarKmPresencia(datos, capaKey) {
 
 
 /* ══════════════════════════════════════════════════════════════════════
-   15 · FILTROS POR DISTRITO (turf.js + buffer configurable)
-   ─────────────────────────────────────────────────────────────────────
-   Correcciones respecto a la versión anterior:
-   · La comparación de nombres ahora es case/space-insensitive (antes el
-     desplegable podía quedar desincronizado con los atributos del dato).
-   · Se aplica un buffer opcional (config.ui.filtroDistrito.bufferMetros)
-     con turf.buffer — el "cálculo de buffer" ya no depende de geometrías
-     sin densificar.
-   · El filtrado alimenta `aplicarDatosFiltrados()`, que actualiza fuentes,
-     KPIs y panel de estadísticas en el mismo paso (antes el panel podía
-     quedar con cifras viejas).
+   15 · FILTROS POR DISTRITO (turf + prioridad de capas)
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Normaliza un nombre para comparar (mayúsculas, sin espacios extras). */
 const norm = s => String(s || '').trim().toUpperCase();
 
-/** Geometría de consulta: distrito (+ buffer si está configurado). */
 function geometriaConsultaDistrito(distritoFeature) {
     const metros = CONFIG_UI.filtroDistrito.bufferMetros || 0;
     if (metros > 0 && typeof turf !== 'undefined') {
@@ -1258,8 +1283,6 @@ function geometriaConsultaDistrito(distritoFeature) {
     return distritoFeature;
 }
 
-/** Test espacial estricto: punto → booleanPointInPolygon; líneas/áreas →
- *  booleanIntersects. Fallback: punto representativo con ray casting. */
 function featureIntersectaGeometria(feature, geometriaConsulta) {
     try {
         if (typeof turf === 'undefined') throw new Error('[LUX] Turf.js no cargado');
@@ -1277,7 +1300,6 @@ function featureIntersectaGeometria(feature, geometriaConsulta) {
     }
 }
 
-/** Fallback sin turf: punto en polígono (ray casting). */
 function puntoEnPoligono(pt, geom) {
     const [x, y] = pt;
     const rings = geom.type === 'Polygon' ? [geom.coordinates[0]]
@@ -1296,7 +1318,6 @@ function puntoEnPoligono(pt, geom) {
     return inside;
 }
 
-/** Un punto representativo del feature para testear contra el polígono. */
 function coordsRepresentativas(feature) {
     const g = feature.geometry;
     if (!g) return null;
@@ -1307,22 +1328,43 @@ function coordsRepresentativas(feature) {
     return null;
 }
 
-/** Filtra todas las capas contra la geometría de consulta y dispara la
- *  actualización de mapa + KPIs + estadísticas. */
+/**
+ * Filtro espacial por distrito (Select by Location).
+ * Optimización: los puntos usan booleanPointInPolygon (más rápido);
+ * las líneas usan booleanIntersects. Si turf falla, cae al ray-casting.
+ */
 function aplicarFiltroGeometrico(geometriaConsulta, nombreFiltro) {
     const filtradas = {};
-    Object.keys(capasData).forEach(key => {
-        filtradas[key] = {
-            type: 'FeatureCollection',
-            features: (capasData[key].features || [])
-                .filter(f => featureIntersectaGeometria(f, geometriaConsulta))
-        };
+    const capasPuntuales = ['luminarias', 'arbolado', 'reclamos'];
+    const capasLineales  = ['vialidades', 'cordon', 'banquina_vereda', 'cuneta'];
+
+    capasPuntuales.forEach(key => {
+        const features = (capasData[key]?.features || []).filter(f => {
+            const pt = coordsRepresentativas(f);
+            if (!pt) return false;
+            try {
+                if (typeof turf === 'undefined') throw new Error('turf no disponible');
+                return turf.booleanPointInPolygon(turf.point(pt), geometriaConsulta);
+            } catch {
+                const polys = (geometriaConsulta.geometry?.type === 'FeatureCollection')
+                    ? geometriaConsulta.features : [geometriaConsulta];
+                return polys.some(p => puntoEnPoligono(pt, p.geometry));
+            }
+        });
+        filtradas[key] = { type: 'FeatureCollection', features };
     });
+
+    capasLineales.forEach(key => {
+        const features = (capasData[key]?.features || []).filter(f =>
+            featureIntersectaGeometria(f, geometriaConsulta)
+        );
+        filtradas[key] = { type: 'FeatureCollection', features };
+    });
+
     filtroActivo = { tipo: 'distrito', nombre: nombreFiltro, geometria: geometriaConsulta };
-    aplicarDatosFiltrados(filtradas, nombreFiltro);
+    aplicarDatosFiltrados(filtradas);
 }
 
-/** Filtra por el distrito elegido en el <select>. */
 function aplicarFiltroDistrito(nombreDistrito) {
     if (!nombreDistrito || norm(nombreDistrito) === norm('Todos')) {
         restaurarDatosCompletos();
@@ -1333,13 +1375,12 @@ function aplicarFiltroDistrito(nombreDistrito) {
         norm(getCampo(f.properties || {}, campoNombre, '')) === norm(nombreDistrito)
     );
     if (!distritoFeat) {
-        console.warn(`[LUX] Distrito no encontrado en los datos: "${nombreDistrito}"`);
+        console.warn(`[LUX] Distrito no encontrado: "${nombreDistrito}"`);
         return;
     }
     aplicarFiltroGeometrico(geometriaConsultaDistrito(distritoFeat), nombreDistrito);
 }
 
-/** Llena el <select> de distritos con los nombres encontrados en los datos. */
 function inicializarFiltroDistritos() {
     const select = document.getElementById('filtro-distrito');
     if (!select) return;
@@ -1364,12 +1405,6 @@ function inicializarFiltroDistritos() {
 
 /* ══════════════════════════════════════════════════════════════════════
    16 · SELECCIÓN ESPACIAL POR RECTÁNGULO (BBOX)
-   ─────────────────────────────────────────────────────────────────────
-   Herramienta de dibujo: con el botón activado, el usuario arrastra un
-   rectángulo sobre el mapa; al soltar, se filtran todas las capas con
-   turf.booleanIntersects contra el polígono del BBOX y se actualizan
-   KPIs + estadísticas en tiempo real (mismo pipeline que el filtro de
-   distrito: `aplicarDatosFiltrados`).
    ══════════════════════════════════════════════════════════════════════ */
 
 const herramientaBbox = {
@@ -1380,7 +1415,6 @@ const herramientaBbox = {
     listeners: []
 };
 
-/** Crea (o recrea) el overlay HTML del rectángulo de selección. */
 function crearOverlayRectangulo() {
     if (herramientaBbox.capaRect) herramientaBbox.capaRect.remove();
     const el = document.createElement('div');
@@ -1390,7 +1424,6 @@ function crearOverlayRectangulo() {
     return el;
 }
 
-/** Activa o desactiva la herramienta BBOX. */
 function alternarHerramientaBbox() {
     herramientaBbox.activa ? desactivarHerramientaBbox() : activarHerramientaBbox();
 }
@@ -1398,7 +1431,7 @@ function alternarHerramientaBbox() {
 function activarHerramientaBbox() {
     herramientaBbox.activa = true;
     map.getCanvas().style.cursor = 'crosshair';
-    map.dragPan.disable(); // el arrastre lo gestiona la herramienta
+    map.dragPan.disable();
 
     const cont = document.getElementById('map');
     const overlay = crearOverlayRectangulo();
@@ -1433,22 +1466,37 @@ function activarHerramientaBbox() {
         herramientaBbox.arrastrando = false;
         overlay.style.display = 'none';
 
-        // Esquinas en coords de contenedor → lngLat.
         const rectCont = cont.getBoundingClientRect();
         const x1 = Math.min(e.clientX, herramientaBbox.inicioPx.x) - rectCont.left;
         const y1 = Math.min(e.clientY, herramientaBbox.inicioPx.y) - rectCont.top;
         const x2 = Math.max(e.clientX, herramientaBbox.inicioPx.x) - rectCont.left;
         const y2 = Math.max(e.clientY, herramientaBbox.inicioPx.y) - rectCont.top;
 
-        const nw = map.unproject([x1, y1]);
-        const se = map.unproject([x2, y2]);
-
-        // Clic sin arrastre (menor a ~4px): limpiar selección.
+        // Clic sin arrastre → deseleccionar y resetear.
         if (Math.abs(x2 - x1) < 4 && Math.abs(y2 - y1) < 4) {
+            limpiarSeleccion();
+            resetearFicha();
             restaurarDatosCompletos();
             return;
         }
-        aplicarSeleccionBbox([nw.lng, nw.lat, se.lng, se.lat]);
+
+        // BBox en píxeles para queryRenderedFeatures nativo.
+        const bboxPx = [[x1, y1], [x2, y2]];
+
+        // Incluye capas PUNTUALES (árboles, luminarias, reclamos) y LINEALES.
+        const layerIds = [
+            'luminarias-layer', 'arbolado-layer', 'reclamos-layer',
+            'vialidades-layer', 'cordon-layer', 'banquina-vereda-layer', 'cuneta-layer'
+        ].filter(id => map.getLayer(id));
+
+        const featuresPx = map.queryRenderedFeatures(bboxPx, { layers: layerIds });
+
+        // Traducir px → lngLat para el pipeline de filtrado.
+        const nw = map.unproject([x1, y1]);
+        const se = map.unproject([x2, y2]);
+        const bbox = [nw.lng, nw.lat, se.lng, se.lat];
+
+        aplicarSeleccionBbox(bbox, featuresPx);
     };
 
     cont.addEventListener('mousedown', alMousedown);
@@ -1481,14 +1529,18 @@ function desactivarHerramientaBbox() {
     if (btn) btn.classList.remove('tool-active');
 }
 
-/** Filtra todas las capas contra el BBOX [minLng, minLat, maxLng, maxLat]. */
-function aplicarSeleccionBbox(bbox) {
+/**
+ * Filtra todas las capas contra el BBOX.
+ * Usa `map.queryRenderedFeatures` para garantizar la inclusión de
+ * entidades PUNTUALES (árboles, luminarias, reclamos) y refuerza con
+ * turf.booleanIntersects para las líneas que cruzan el rectángulo.
+ */
+function aplicarSeleccionBbox(bbox, featuresPx = null) {
     let poligonoBbox;
     try {
         if (typeof turf === 'undefined') throw new Error('turf no disponible');
         poligonoBbox = turf.bboxPolygon(bbox);
     } catch (err) {
-        // Fallback sin turf: polígono manual a partir del bbox.
         const [minX, minY, maxX, maxY] = bbox;
         poligonoBbox = {
             type: 'Feature',
@@ -1496,21 +1548,39 @@ function aplicarSeleccionBbox(bbox) {
         };
     }
 
+    // Índice de features detectadas por el motor nativo (dedupe por coords).
+    const setNativoPorCapa = {};
+    if (Array.isArray(featuresPx)) {
+        featuresPx.forEach(f => {
+            const capaKey = getConfigPorCapaId(f.layer?.id)?.key;
+            if (!capaKey) return;
+            const geom = f.geometry;
+            if (!geom) return;
+            const clave = geom.type === 'Point'
+                ? JSON.stringify(geom.coordinates)
+                : JSON.stringify(geom.coordinates?.[0] || '');
+            (setNativoPorCapa[capaKey] ||= new Set()).add(clave);
+        });
+    }
+
     const filtradas = {};
     Object.keys(capasData).forEach(key => {
-        filtradas[key] = {
-            type: 'FeatureCollection',
-            features: (capasData[key].features || [])
-                .filter(f => featureIntersectaGeometria(f, poligonoBbox))
-        };
+        const features = (capasData[key].features || []).filter(f => {
+            // 1) Test geométrico estricto.
+            if (featureIntersectaGeometria(f, poligonoBbox)) return true;
+            // 2) Refuerzo: si el motor nativo lo detectó como punto, incluirlo.
+            const geom = f.geometry;
+            if (!geom || geom.type !== 'Point') return false;
+            return setNativoPorCapa[key]?.has(JSON.stringify(geom.coordinates)) || false;
+        });
+        filtradas[key] = { type: 'FeatureCollection', features };
     });
 
     filtroActivo = { tipo: 'bbox', nombre: 'Selección por área', geometria: poligonoBbox };
-    aplicarDatosFiltrados(filtradas, 'Selección por área');
+    aplicarDatosFiltrados(filtradas);
 
-    // Feedback breve al usuario con el total seleccionado.
     const totalSel = Object.values(filtradas).reduce((a, g) => a + g.features.length, 0);
-    console.info(`[LUX] Selección BBOX: ${totalSel} entidades dentro del área.`);
+    console.info(`[LUX] Selección BBOX: ${totalSel} entidades (puntos + líneas).`);
 }
 
 
@@ -1527,8 +1597,6 @@ function destruirChartsStats() {
     });
 }
 
-/** Si el panel está abierto, lo repinta con los datos vigentes:
- *  nunca muestra cifras desactualizadas tras filtrar. */
 function refrescarStatsSiAbierto() {
     const panel = document.getElementById('stats-panel');
     if (panel && !panel.classList.contains('translate-x-full')) {
@@ -1536,7 +1604,6 @@ function refrescarStatsSiAbierto() {
     }
 }
 
-/** Renderiza las secciones del panel sobre los datos vigentes. */
 function renderizarEstadisticas() {
     const cont = document.getElementById('stats-content');
     if (!cont) return;
@@ -1560,7 +1627,6 @@ function renderizarEstadisticas() {
 
     const fmtKW = v => v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kW';
 
-    // ── Resumen general con barras relativas ──
     const totalLum = datos.luminarias?.features?.length || 0;
     const totalArb = datos.arbolado?.features?.length || 0;
     const totalRec = datos.reclamos?.features?.length || 0;
@@ -1589,7 +1655,6 @@ function renderizarEstadisticas() {
             </div>`;
     };
 
-    // ── Luminarias: torta LED vs otras + potencia instalada (colores PALETA) ──
     let led = 0, otras = 0, wattsLed = 0, wattsOtras = 0, wattsTotal = 0;
     (datos.luminarias?.features || []).forEach(f => {
         const props = f.properties || {};
@@ -1599,7 +1664,6 @@ function renderizarEstadisticas() {
         wattsTotal += pot;
     });
 
-    // ── Arbolado: top especies ──
     const especies = {};
     (datos.arbolado?.features || []).forEach(f => {
         const esp = getCampo(f.properties, CONFIG_CAPAS.arbolado.kpis.especie.campo, 'Sin especie');
@@ -1609,7 +1673,6 @@ function renderizarEstadisticas() {
     const topEspecies = Object.entries(especies).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxEsp = topEspecies[0]?.[1] || 1;
 
-    // Chip que indica qué filtro está vigente (transparencia para el usuario).
     const chipFiltro = filtroActivo.tipo !== 'todos'
         ? `<div class="text-[10px] font-semibold text-cyan-700 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-900/30 border border-cyan-200 dark:border-cyan-800 rounded-lg px-3 py-2">
                Filtro activo: ${filtroActivo.nombre} · <button id="btn-limpiar-filtro" class="underline cursor-pointer">quitar</button>
@@ -1650,16 +1713,11 @@ function renderizarEstadisticas() {
             </div>`)}
     `;
 
-    // Botón "quitar filtro" dentro del chip.
     const btnLimpiar = document.getElementById('btn-limpiar-filtro');
     if (btnLimpiar) btnLimpiar.addEventListener('click', () => {
-        const sel = document.getElementById('filtro-distrito');
-        if (sel) sel.value = 'Todos';
         restaurarDatosCompletos();
-        if (sel) sel.dispatchEvent(new Event('change'));
     });
 
-    // Torta LED vs otras (Chart.js) con colores de leyenda según tema.
     const isDark = document.documentElement.classList.contains('dark');
     const labelColor = isDark ? '#e2e8f0' : '#334155';
     const ctx = document.getElementById('chart-tecnologia')?.getContext('2d');
@@ -1699,7 +1757,6 @@ function inicializarPanelEstadisticas() {
    18 · UTILIDADES DE UI
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Acordeón "Referencias" sobre el mapa. */
 function inicializarLeyenda() {
     const btn = document.getElementById('legend-toggle');
     const panel = document.getElementById('legend-panel');
@@ -1716,7 +1773,6 @@ function inicializarLeyenda() {
     });
 }
 
-/** Acordeón "Ver más campos" de la ficha técnica (genérica + arbolado). */
 function inicializarAcordeonFicha() {
     const btn = document.getElementById('btn-ver-mas-campos');
     const panelGenerico = document.getElementById('campos-secundarios');
@@ -1728,7 +1784,9 @@ function inicializarAcordeonFicha() {
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
-        const objetivo = (!panelArbolado.classList.contains('hidden')) ? panelArbolado : panelGenerico;
+        const arbVisible = panelArbolado && !panelArbolado.parentElement.classList.contains('hidden');
+        const objetivo = arbVisible ? panelArbolado : panelGenerico;
+        if (!objetivo) return;
         const abrir = objetivo.classList.contains('hidden');
         objetivo.classList.toggle('hidden', !abrir);
         if (chevron) chevron.style.transform = abrir ? 'rotate(180deg)' : 'rotate(0deg)';
@@ -1736,7 +1794,6 @@ function inicializarAcordeonFicha() {
     });
 }
 
-/** Botones de tecnología del dropdown de luminarias. */
 function inicializarFiltroCategoriasLuminarias() {
     document.querySelectorAll('[data-lum-category]').forEach(el => {
         if (el.dataset.ready === '1') return;
@@ -1749,7 +1806,6 @@ function inicializarFiltroCategoriasLuminarias() {
     });
 }
 
-/** Toggle del mapa de calor de arbolado. */
 function inicializarHeatmapArbolado() {
     const btn = document.getElementById('btn-heatmap-arbolado');
     if (!btn || btn.dataset.ready === '1') return;
@@ -1761,7 +1817,6 @@ function inicializarHeatmapArbolado() {
     });
 }
 
-/** Botón de la herramienta BBOX (barra de KPIs). */
 function inicializarHerramientaBbox() {
     const btn = document.getElementById('btn-bbox-select');
     if (!btn || btn.dataset.ready === '1') return;
@@ -1771,13 +1826,11 @@ function inicializarHerramientaBbox() {
         e.stopPropagation();
         alternarHerramientaBbox();
     });
-    // Esc cancela la herramienta.
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && herramientaBbox.activa) desactivarHerramientaBbox();
     });
 }
 
-/** Filtro por tecnología de luminarias: clicar la misma categoría lo quita. */
 function clasificarTecnologiaLuminaria(feature) {
     const cfg = CONFIG_CAPAS.luminarias.kpis.tecnologia;
     const valor = getCampoUpper(feature?.properties || {}, cfg.campo, '');
@@ -1814,8 +1867,6 @@ function aplicarFiltroCategoriaLuminarias(categoria) {
    19 · EXPORTACIÓN PDF
    ══════════════════════════════════════════════════════════════════════ */
 
-/** Genera un PDF A4 con el mapa capturado, KPIs y (si hay) la ficha del
- *  elemento seleccionado. Se imprime el mismo HTML visible en pantalla. */
 function inicializarExportacionPDF() {
     const btnPdf = document.getElementById('btn-export-pdf');
     if (!btnPdf || btnPdf.dataset.ready === '1') return;
@@ -1824,7 +1875,6 @@ function inicializarExportacionPDF() {
     btnPdf.addEventListener('click', () => {
         const { municipio } = APP_CONFIG;
 
-        // Captura del mapa (por eso preserveDrawingBuffer: true).
         let mapaBase64 = null;
         let aspectHeight = 220;
         try {
@@ -1944,10 +1994,8 @@ function inicializarExportacionPDF() {
 
 aplicarConfiguracionMunicipal();
 
-// Cuando el mapa está listo, se cargan los datos y se construye el visor.
 map.on('load', () => cargarTodosLosGeoJSON());
 
-// Cableado de toda la UI una vez disponible el DOM.
 document.addEventListener('DOMContentLoaded', () => {
     inicializarWidgetCoordenadas();
     inicializarBuscadorOSM();
@@ -1960,8 +2008,6 @@ document.addEventListener('DOMContentLoaded', () => {
     inicializarExportacionPDF();
 });
 
-// Handle de depuración / integración: permite inspeccionar el estado
-// desde la consola (LUX.map, LUX.datos, LUX.aplicarFiltroDistrito...).
 window.LUX = {
     map,
     get datos() { return datosActuales(); },
@@ -1970,5 +2016,7 @@ window.LUX = {
     aplicarFiltroDistrito,
     aplicarSeleccionBbox,
     restaurarDatosCompletos,
-    calcularKPIs
+    calcularKPIs,
+    resetearFicha,
+    limpiarSeleccion
 };
