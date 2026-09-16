@@ -7,7 +7,18 @@
 
     <title>Lux Vision — Inventario de Activos Urbanos</title>
 
-    <!-- Tipografía: Archivo (grotesque moderna, con cifras tabulares) -->
+    <!-- ====================================================================
+         TIPOGRAFÍA GLOBAL DE LA APLICACIÓN
+         --------------------------------------------------------------------
+         Fuente única: "Archivo" (grotesque moderna, con cifras tabulares).
+         Esta familia se aplica a TODA la UI desde styles.css (ver sección 1
+         del CSS, variable --font-ui). Los componentes que la consumen son:
+           1) Encabezado principal (Header) ......... .kpi-module / .kpi-number
+           2) Panel lateral (Ficha técnica) ......... #technical-sidebar
+           3) Menús desplegables (Dropdowns/Select) . .dropdown-content / select
+           4) Tarjetas de estadísticas y widgets .... #stats-panel
+           5) Contenedor "Fecha actualización" ...... #fecha-ultima-actualizacion
+         ==================================================================== -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,10 +34,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-    <!-- Todos los enlaces externos se abren en pestaña nueva -->
     <base target="_blank">
-<base target="_blank">
-<base target="_blank">
 </head>
 
 <body class="bg-slate-50 dark:bg-[#030712] text-slate-900 dark:text-slate-100 h-screen flex flex-col overflow-hidden transition-colors duration-300">
@@ -37,13 +45,13 @@
     <!-- ── Fila superior: branding · título · buscador · coordenadas · mapa base ── -->
     <div class="w-full flex items-center justify-between px-4 h-[46px] border-b border-white/[0.06] relative gap-3">
 
-        <!-- Logos: Lux + Municipio -->
+        <!-- Logos: Lux + Municipio (los hrefs se refuerzan desde config.js) -->
         <div class="flex items-center gap-3 shrink-0">
-            <a id="brand-lux" href="#" rel="noopener noreferrer" class="flex items-center">
+            <a id="brand-lux" href="https://www.luxleasing.com.ar/" rel="noopener noreferrer" class="flex items-center">
                 <img src="logo_lux_byn.png" alt="Logo Lux" class="h-6 w-auto object-contain opacity-70 hover:opacity-100 transition-opacity" onerror="this.style.display='none';">
             </a>
             <div class="h-4 border-l border-dotted border-white/20"></div>
-            <a id="brand-municipio" href="#" rel="noopener noreferrer" class="flex items-center">
+            <a id="brand-municipio" href="https://rivadaviamendoza.gob.ar/new/" rel="noopener noreferrer" class="flex items-center">
                 <img src="logo_riv_2.png" alt="Logo municipio" class="h-[18px] w-auto object-contain opacity-70 hover:opacity-100 transition-opacity" onerror="this.style.display='none';">
             </a>
         </div>
@@ -69,6 +77,7 @@
                     </svg>
                 </button>
             </div>
+            <!-- Contenedor "Fecha de actualización" — hereda tipografía desde styles.css §1 -->
             <div class="text-[8.5px] text-slate-500 mt-0.5 whitespace-nowrap">
                 Fecha actualización: <span id="fecha-ultima-actualizacion">Cargando…</span>
             </div>
@@ -132,21 +141,26 @@
                 <span class="kpi-label">Km Viales</span>
             </button>
             <div id="drop-vialidades" class="dropdown-content absolute top-full left-1/2 -translate-x-1/2 mt-1 w-52 bg-[#0b1528] border border-white/10 rounded-xl shadow-xl p-3 hidden z-50">
+               
+
                 <h3 class="dropdown-title">Distribución Km</h3>
                 <div class="space-y-2 text-xs">
-                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidades:PAVIMENTADA"></span> Pavimentado</span><span id="kpi-vial-pav" class="font-bold text-slate-300">0</span></div>
+                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidades:PAVIMENTADO"></span> Pavimentado</span><span id="kpi-vial-pav" class="font-bold text-slate-300">0</span></div>
                     <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidades:CONSOLIDADA"></span> Consolidada</span><span id="kpi-vial-cons" class="font-bold text-slate-400">0</span></div>
                     <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidades:TIERRA"></span> Tierra</span><span id="kpi-vial-tierra" class="font-bold text-slate-400">0</span></div>
                     <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidades:SIN DATO"></span> Sin dato</span><span id="kpi-vial-sd" class="font-bold text-slate-400">0</span></div>
                 </div>
-                <h3 class="dropdown-title mt-3">Km por Zona (Administración)</h3>
+                <h3 class="dropdown-title mt-3">Km por Zona (Jurisdicción)</h3>
                 <div class="space-y-1.5 text-xs">
-                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span> DPV</span><span id="kpi-vial-dpv" class="font-bold text-slate-300">0</span></div>
-                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> Municipal</span><span id="kpi-vial-mun" class="font-bold text-slate-300">0</span></div>
-                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Otro</span><span id="kpi-vial-otro" class="font-bold text-slate-400">0</span></div>
+                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidadesPorZona:MUNICIPAL"></span> Municipal</span><span id="kpi-vial-mun" class="font-bold text-slate-300">0</span></div>
+                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidadesPorZona:DPV"></span> DPV</span><span id="kpi-vial-dpv" class="font-bold text-slate-300">0</span></div>
+                    <div class="flex justify-between items-center"><span class="flex items-center gap-1.5 text-slate-300"><span class="w-2 h-2 rounded-full" data-sym="vialidadesPorZona:OTRO"></span> Otro</span><span id="kpi-vial-otro" class="font-bold text-slate-400">0</span></div>
                 </div>
+
+         
             </div>
         </div>
+
 
         <!-- KPI · Lateral vial -->
         <div class="kpi-module-wrap">
@@ -212,11 +226,7 @@
             <h3 class="text-[11px] font-bold uppercase tracking-[0.08em]">Ficha Técnica</h3>
         </div>
 
-        <!-- ── Buscador de direcciones (Nominatim/OSM) + coordenadas ──────
-             Reubicados desde el encabezado a la ficha lateral: cualquier
-             clic en el mapa fija la coordenada aquí y trae la dirección
-             inversa automáticamente (reverse geocoding configurable en
-             CONFIG.ui.busqueda de config.js). -->
+        <!-- ── Buscador de direcciones (Nominatim/OSM) + coordenadas ────── -->
         <div class="p-3 border-b space-y-2">
             <div id="osm-search-box" class="relative">
                 <input id="osm-search-input" type="text" autocomplete="off"
@@ -234,9 +244,6 @@
                         <circle cx="12" cy="10.5" r="2.5"></circle>
                     </svg>
                     <span id="coords-value" class="font-semibold whitespace-nowrap">— · —</span>
-                </span>
-                
-               
                 </span>
             </div>
             <div id="info-ubicacion" class="hidden text-[10px] leading-snug text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5"></div>
@@ -275,24 +282,19 @@
                     </div>
                 </div>
 
-                <!-- Ficha estructurada del ARBOLADO (8 campos + ver más). Se
-                     rellena dinámicamente desde config.capas.arbolado -->
+                <!-- Ficha estructurada del ARBOLADO (8 campos + ver más).
+                     Se rellena dinámicamente desde config.capas.arbolado -->
                 <div id="ficha-arbolado" class="hidden space-y-3">
                     <div id="ficha-arbolado-primaria" class="grid grid-cols-2 ficha-grid"></div>
                     <div id="ficha-arbolado-secundaria" class="hidden grid grid-cols-2 ficha-grid"></div>
                 </div>
 
-                <!-- Ficha genérica (luminarias, vialidades, lateral, reclamos) -->
-                <div class="grid grid-cols-2 ficha-grid">
-                    <div class="ficha-celda border-b border-r">
-                        <span id="label-tipo" class="ficha-label">Tecnología</span>
-                        <span id="info-tipo" class="ficha-valor">-</span>
-                    </div>
-                    <div class="ficha-celda border-b">
-                        <span id="label-potencia" class="ficha-label">Potencia</span>
-                        <span id="info-potencia" class="ficha-valor">-</span>
-                    </div>
-                </div>
+                <!-- ── FICHA DINÁMICA POR CAPA ─────────────────────────────
+                     El contenedor `#campos-dinamicos` se rellena desde app.js
+                     (renderizarFichaGenerica) con los campos EXACTOS de la
+                     capa seleccionada. Se LIMPIA en cada selección para evitar
+                     residuos de capas anteriores. -->
+                <div id="campos-dinamicos" class="grid grid-cols-2 ficha-grid"></div>
 
                 <!-- Acordeón de campos secundarios (genérico) -->
                 <button id="btn-ver-mas-campos" class="w-full flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600 hover:text-slate-900 py-1.5 px-1 border-b border-dotted border-slate-300 transition-colors cursor-pointer">
@@ -300,20 +302,7 @@
                     <span id="chevron-ver-mas" class="text-slate-400 transition-transform duration-200">▾</span>
                 </button>
 
-                <div id="campos-secundarios" class="grid grid-cols-2 ficha-grid">
-                    <div class="ficha-celda border-b border-r"><span id="label-marca" class="ficha-label">Marca</span><span id="info-marca" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b"><span id="label-modelo" class="ficha-label">Modelo</span><span id="info-modelo" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b border-r"><span class="ficha-label">Calle</span><span id="info-calle" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b"><span id="label-soporte" class="ficha-label">Soporte</span><span id="info-soporte" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b border-r"><span id="label-funcion" class="ficha-label">Función</span><span id="info-funcion" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b"><span id="label-brazo" class="ficha-label">Brazo</span><span id="info-brazo" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b border-r"><span id="label-streetview" class="ficha-label">StreetView</span><span id="info-streetview" class="ficha-valor">-</span></div>
-                    <div class="ficha-celda border-b"><span id="label-fecha-act" class="ficha-label">Fecha_Act</span><span id="info-fecha-act" class="ficha-valor">-</span></div>
-                    <div class="hidden">
-                        <span id="info-barrio"></span>
-                        <span id="info-linkstreetview"></span>
-                    </div>
-                </div>
+                <div id="campos-secundarios" class="hidden grid grid-cols-2 ficha-grid"></div>
 
                 <div class="pt-2">
                     <button id="btn-export-pdf" class="w-full bg-[#1b2a47] hover:bg-[#1f618d] text-white text-[12px] font-bold py-2 px-3 rounded-md shadow transition-colors cursor-pointer">Exportar PDF</button>
@@ -330,8 +319,6 @@
             <button id="legend-toggle" class="ml-auto flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-gray-800/85 px-3 py-2 font-semibold text-slate-700 dark:text-slate-200 shadow-lg backdrop-blur hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                 Referencias <span id="legend-chevron">▾</span>
             </button>
-            <!-- El cuerpo de la leyenda se genera dinámicamente desde
-                 CONFIG.simbologia (mismos colores que el mapa y desplegables) -->
             <div id="legend-panel" class="hidden mt-2 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-gray-800/85 p-3 shadow-xl backdrop-blur">
                 <div class="mb-2 font-bold uppercase tracking-[0.08em] text-[10px] text-slate-500 dark:text-slate-400">Simbología</div>
                 <div id="legend-body" class="space-y-2 text-slate-700 dark:text-slate-300"></div>
