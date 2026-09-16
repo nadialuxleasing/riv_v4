@@ -1,0 +1,566 @@
+/* ==========================================================================
+   LUX VISION · styles.css (v2 — refactor)
+   --------------------------------------------------------------------------
+   Índice:
+     1 · CONFIGURACIÓN DE COLORES Y TIPOGRAFÍA   ← EDITAR ACÁ (líneas 16-60)
+     2 · Base (tipografía global, selección, scrollbars)
+     3 · Encabezado (degradado + fila de KPIs)
+     4 · Controles (buscador, coordenadas, selectores, dropdowns)
+     5 · Ficha técnica (panel lateral — fondo blanco, jerarquía limpia)
+     6 · Panel de estadísticas
+     7 · Leyenda
+     8 · Popups del mapa
+     9 · Selección BBOX (overlay)
+    10 · Responsive
+   ========================================================================== */
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   1 · CONFIGURACIÓN DE COLORES Y TIPOGRAFÍA
+   ──────────────────────────────────────────────────────────────────────
+   >>> PARA CAMBIAR LA PALETA O LAS FUENTES DEL VISOR, EDITA SOLO ESTE
+   >>> BLOQUE. El resto del CSS consume estas variables (--ux-*, --font-ui).
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+
+    /* ── 1.A · TIPOGRAFÍA ─────────────────────────────────────────────
+       Fuente única del visor. Para cambiarla, reemplaza este valor
+       (y el <link> de Google Fonts en index.html). */
+    --font-ui: "Archivo", "Inter", sans-serif;
+
+    /* Pesos usados en la jerarquía de la ficha */
+    --font-weight-label: 800;    /* etiquetas en mayúsculas (negrita fuerte) */
+    --font-weight-valor: 500;    /* valores de atributos */
+    --font-weight-num:   700;    /* cifras KPI */
+
+    /* Tracking (espaciado entre letras) */
+    --tracking-label: 0.09em;    /* KPI labels, títulos de dropdown */
+    --tracking-num: -0.015em;    /* cifras: ligeramente cerrado */
+
+    /* ── 1.B · PALETA DEL PANEL LATERAL (ficha técnica) ───────────────
+       Jerarquía visual limpia sobre fondo BLANCO (tema claro y oscuro):
+       etiquetas muy oscuras en negrita, valores grises medianos,
+       líneas internas sutiles. */
+    --ux-sidebar-bg:            #ffffff;   /* fondo del panel lateral */
+    --ux-sidebar-border:        #e2e8f0;   /* borde externo del panel */
+    --ux-celda-border:          #e2e8f0;   /* líneas internas de la grilla */
+    --ux-label-color:           #0f172a;   /* color de las ETIQUETAS (oscuro) */
+    --ux-valor-color:           #334155;   /* color de los VALORES */
+    --ux-accent:                #1f618d;   /* acento institucional (botones) */
+    --ux-btn-primary-bg:        #1b2a47;   /* botón "Exportar PDF" (reposo) */
+    --ux-btn-primary-bg-hover:  #1f618d;   /* botón "Exportar PDF" (hover) */
+
+    /* ── 1.C · PALETA OSCURA (variante .dark) ─────────────────────────
+       Mismos componentes del panel lateral en tema oscuro. */
+    --ux-sidebar-bg-dark:       #0b1528;
+    --ux-sidebar-border-dark:   rgba(148, 163, 184, 0.15);
+    --ux-celda-border-dark:     #1e293b;
+    --ux-label-color-dark:      #cbd5e1;
+    --ux-valor-color-dark:      #f1f5f9;
+
+    /* ── 1.D · Acento institucional global (encabezado, selección, foco) */
+    --accent: #5a9cf2;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   2 · BASE
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Tipografía global. Las cifras usan formato tabular para que los KPI
+   no "bailen" al actualizarse. */
+body, button, input, select, textarea {
+    font-family: var(--font-ui) !important;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+::selection {
+    background: rgba(90, 156, 242, 0.35);
+}
+
+/* Scrollbars discretas en paneles con scroll */
+.sidebar-scroll::-webkit-scrollbar,
+#stats-content::-webkit-scrollbar {
+    width: 6px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb,
+#stats-content::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.35);
+    border-radius: 999px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover,
+#stats-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.55);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   3 · ENCABEZADO
+   ══════════════════════════════════════════════════════════════════════ */
+
+#main-header {
+    /* Degradado en rgba semi-transparente: deja traslucir el mapa y
+       permite que el backdrop-blur haga efecto real. */
+    background:
+        radial-gradient(900px 140% at 15% -60%, rgba(90, 156, 242, 0.14), transparent 55%),
+        radial-gradient(700px 140% at 85% -60%, rgba(34, 211, 238, 0.07), transparent 55%),
+        linear-gradient(98deg,
+            rgba(5, 7, 13, 0.80) 0%,
+            rgba(10, 17, 32, 0.78) 42%,
+            rgba(12, 21, 38, 0.78) 68%,
+            rgba(7, 11, 20, 0.80) 100%) !important;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16) !important;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.42);
+}
+:root:not(.dark) #main-header {
+    background:
+        radial-gradient(900px 140% at 15% -60%, rgba(90, 156, 242, 0.18), transparent 55%),
+        linear-gradient(98deg,
+            rgba(11, 18, 32, 0.82) 0%,
+            rgba(19, 35, 63, 0.80) 50%,
+            rgba(11, 18, 32, 0.82) 100%) !important;
+}
+
+/* ── Módulos KPI ── */
+
+.kpi-module-wrap {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+}
+
+/* Separador SÓLIDO y fino entre módulos KPI (reemplaza al punteado).
+   Grosor, opacidad y extensión vertical ajustables desde acá. */
+.kpi-module-wrap::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 24%;
+    height: 52%;
+    border-left: 1px solid rgba(255, 255, 255, 0.22);
+    transition: border-color 0.15s ease;
+}
+.kpi-module-wrap:hover::before {
+    border-left-color: rgba(255, 255, 255, 0.45);
+}
+:root:not(.dark) .kpi-module-wrap::before {
+    border-left-color: rgba(255, 255, 255, 0.25);
+}
+.kpi-module-wrap:first-of-type::before { display: none; }
+
+/* El botón KPI en sí: sin caja, solo tipografía */
+.kpi-module {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 18px;
+    min-width: 96px;
+    cursor: pointer;
+    gap: 1px;
+    color: inherit;
+}
+.kpi-module:hover { background: rgba(255, 255, 255, 0.025) !important; }
+
+/* "TODAS" es solo una etiqueta: la centramos verticalmente */
+#btn-mod-todos .kpi-label { padding-top: 8px; }
+
+/* Cifra grande */
+.kpi-number {
+    font-size: 13.5px !important;
+    font-weight: var(--font-weight-num) !important;
+    line-height: 1.15 !important;
+    letter-spacing: var(--tracking-num) !important;
+    color: #f1f5f9 !important;
+    transition: color 0.15s ease;
+}
+
+/* Etiqueta pequeña en mayúsculas con aire entre letras */
+.kpi-label {
+    font-size: 8px !important;
+    font-weight: 600 !important;
+    letter-spacing: var(--tracking-label) !important;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38) !important;
+    transition: color 0.15s ease;
+}
+
+/* Estados on/off (controlados desde app.js) */
+#main-header .kpi-module.layer-button-off .kpi-number { color: rgba(255, 255, 255, 0.18) !important; }
+#main-header .kpi-module.layer-button-off .kpi-label  { color: rgba(255, 255, 255, 0.14) !important; }
+#main-header .kpi-module.layer-button-on  .kpi-number { color: #ffffff !important; }
+#main-header .kpi-module.layer-button-on  .kpi-label  { color: rgba(255, 255, 255, 0.55) !important; }
+
+/* Hover: ilumina número y etiqueta del módulo completo */
+.kpi-module-wrap:hover .kpi-number { color: #ffffff !important; }
+.kpi-module-wrap:hover .kpi-label  { color: rgba(255, 255, 255, 0.6) !important; }
+
+/* El dropdown se abre con CSS puro: hover sobre el wrapper */
+.kpi-module-wrap:hover > .dropdown-content { display: block !important; }
+
+/* Botón de filtro por tecnología activo */
+.lum-category.is-active {
+    border-color: rgba(34, 211, 238, 0.5) !important;
+    background: rgba(34, 211, 238, 0.06);
+}
+
+/* Herramienta BBOX activa */
+#btn-bbox-select.tool-active {
+    background: rgba(34, 211, 238, 0.18) !important;
+    border-color: rgba(34, 211, 238, 0.6) !important;
+    color: #22d3ee !important;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   4 · CONTROLES (fila superior del header)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Buscador Nominatim ── */
+.osm-search-input {
+    width: 240px;
+    height: 28px;
+    padding: 0 10px 0 30px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 11px;
+    outline: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.osm-search-input::placeholder { color: rgba(148, 163, 184, 0.6); }
+.osm-search-input:focus {
+    border-color: rgba(90, 156, 242, 0.65);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+/* Resultados del buscador */
+.osm-result-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: #cbd5e1;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.osm-result-item:hover { background: rgba(90, 156, 242, 0.14); color: #fff; }
+.osm-result-item:last-child { border-bottom: none; }
+
+#map-style-select {
+    background: transparent !important;
+    border: none !important;
+    color: #e2e8f0 !important;
+    font-size: 11px !important;
+    letter-spacing: 0.01em;
+}
+#map-style-select option { background: #0a0e1a; color: #e2e8f0; }
+
+#theme-toggle {
+    background: transparent !important;
+    border: none !important;
+    color: rgba(255, 255, 255, 0.5) !important;
+}
+#theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #fff !important;
+}
+
+#filtro-distrito {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #cbd5e1 !important;
+}
+#filtro-distrito option { background: #0a0e1a; color: #e2e8f0; }
+
+#btn-stats, #btn-bbox-select {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+#btn-stats:hover, #btn-bbox-select:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+}
+
+/* Títulos y filas de los dropdowns de KPI */
+.dropdown-title {
+    font-size: 9px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.45);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.dropdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   5 · FICHA TÉCNICA (panel lateral)
+   ──────────────────────────────────────────────────────────────────────
+   Diseño sobre fondo BLANCO con jerarquía limpia (ver imagen de ref.):
+   tarjeta Street View → grilla de atributos con etiquetas oscuras en
+   negrita → acordeón "Ver más campos" → botón Exportar PDF.
+   Los colores salen del bloque 1 (--ux-*): EDITAR LA PALETA ALLÍ.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 5.A · Contenedor principal del panel ── */
+#technical-sidebar {
+    background-color: var(--ux-sidebar-bg) !important;                 /* l. ~225 */
+    border-color: var(--ux-sidebar-border) !important;
+    color: #0f172a;
+}
+.dark #technical-sidebar {
+    background-color: var(--ux-sidebar-bg-dark) !important;
+    border-color: var(--ux-sidebar-border-dark) !important;
+    color: var(--ux-valor-color-dark);
+}
+#technical-sidebar > div:first-child { border-color: var(--ux-sidebar-border) !important; }
+.dark #technical-sidebar > div:first-child { border-color: var(--ux-sidebar-border-dark) !important; }
+#technical-sidebar h3 { color: #1b2a47 !important; letter-spacing: 0.08em; }
+.dark #technical-sidebar h3 { color: #f1f5f9 !important; }
+
+/* ── 5.B · Tarjeta Google Street View ── */
+.sv-card {
+    background: var(--ux-sidebar-bg);
+    border: 1px solid var(--ux-sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+}
+.dark .sv-card {
+    background: var(--ux-sidebar-bg-dark);
+    border-color: var(--ux-sidebar-border-dark);
+}
+.sv-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ux-sidebar-border);
+    background: #f8f9fa;
+}
+.dark .sv-card-header {
+    border-color: var(--ux-sidebar-border-dark);
+    background: rgba(148, 163, 184, 0.06);
+}
+.sv-card-header span {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+}
+.dark .sv-card-header span { color: #e2e8f0; }
+.sv-card-header a {
+    font-size: 11px;
+    font-weight: 600;
+    color: #2980b9;
+    text-decoration: none;
+}
+.sv-card-header a:hover { color: var(--ux-accent); }
+
+/* ── 5.C · Grilla de atributos (jerarquía etiqueta/valor) ── */
+.ficha-grid {
+    background: var(--ux-sidebar-bg);
+    border: 1px solid var(--ux-celda-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.dark .ficha-grid {
+    background: var(--ux-sidebar-bg-dark);
+    border-color: var(--ux-celda-border-dark);
+}
+.ficha-celda {
+    padding: 10px 12px;
+    min-height: 52px;
+}
+.dark .ficha-celda { border-color: var(--ux-celda-border-dark) !important; }
+
+/* Etiqueta: mayúscula, negrita fuerte, muy oscura → jerarquía clara.
+   Color y peso desde el bloque 1 (--ux-label-color / --font-weight-label). */
+.ficha-label {
+    display: block;
+    font-size: 9.5px;
+    font-weight: var(--font-weight-label);     /* l. ~300 */
+    color: var(--ux-label-color);              /* l. ~301 */
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 3px;
+}
+.dark .ficha-label { color: var(--ux-label-color-dark); }
+
+/* Valor: gris medio, peso medio → nunca compite con la etiqueta */
+.ficha-valor {
+    display: block;
+    font-size: 12.5px;
+    font-weight: var(--font-weight-valor);     /* l. ~315 */
+    color: var(--ux-valor-color);              /* l. ~316 */
+    letter-spacing: 0.01em;
+    word-break: break-word;
+}
+.dark .ficha-valor { color: var(--ux-valor-color-dark); }
+
+/* ── 5.D · Botón Exportar PDF (acento desde bloque 1) ── */
+#btn-export-pdf {
+    background: var(--ux-btn-primary-bg) !important;           /* l. ~330 */
+    border-radius: 6px;
+    letter-spacing: 0.03em;
+}
+#btn-export-pdf:hover {
+    background: var(--ux-btn-primary-bg-hover) !important;     /* l. ~335 */
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   6 · PANEL DE ESTADÍSTICAS
+   ══════════════════════════════════════════════════════════════════════ */
+
+#stats-panel { will-change: transform; }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   7 · LEYENDA
+   ══════════════════════════════════════════════════════════════════════ */
+
+#legend-panel { font-size: 11.5px; }
+
+.legend-group-title {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    padding-top: 6px;
+}
+.legend-group-title:first-child { padding-top: 0; }
+.dark .legend-group-title { color: #94a3b8; }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   8 · POPUPS DEL MAPA
+   ══════════════════════════════════════════════════════════════════════ */
+
+.dark .maplibregl-popup-content {
+    background: #051c63 !important;
+    color: #e7edf3 !important;
+    border: 1px solid #0b2c82;
+}
+.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+    border-bottom-color: #040d3d !important;
+}
+html:not(.dark) .maplibregl-popup-content {
+    background: #ffffff !important;
+    color: #020410 !important;
+    border: 1px solid #e7edf3;
+}
+html:not(.dark) .maplibregl-popup-anchor-top .maplibregl-popup-tip {
+    border-bottom-color: #ffffff !important;
+}
+
+.maplibregl-popup-content { font-family: var(--font-ui) !important; }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   9 · SELECCIÓN BBOX (overlay del rectángulo)
+   Colores también configurables: CONFIG.ui.seleccionBBox en config.js.
+   ══════════════════════════════════════════════════════════════════════ */
+
+#bbox-rect-overlay {
+    position: fixed;
+    display: none;
+    border: 1.5px dashed #22d3ee;   /* se sobrescribe con CONFIG.ui.seleccionBBox.color */
+    background: rgba(34, 211, 238, 0.08);
+    pointer-events: none;
+    z-index: 30;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   10 · RESPONSIVE
+   ══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1360px) {
+    .osm-search-input { width: 180px; }
+}
+@media (max-width: 1180px) {
+    .kpi-module { padding: 4px 13px; min-width: 84px; }
+    .kpi-number { font-size: 13px !important; }
+}
+@media (max-width: 900px) {
+    .kpi-module { padding: 4px 9px; min-width: 72px; }
+    .kpi-number { font-size: 12px !important; }
+    .kpi-label  { font-size: 7.5px !important; }
+    #coords-widget { display: none !important; }
+}
+@media (max-width: 700px) {
+    .kpi-module { padding: 4px 6px; min-width: 58px; }
+    .kpi-number { font-size: 11.5px !important; }
+    .kpi-label  { font-size: 7px !important; letter-spacing: 0.05em !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ADDENDA v2.2 · Buscador en ficha lateral + tipografía de estadísticas
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── A · Buscador Nominatim y coordenadas reubicados DENTRO de la ficha lateral ──
+   El buscador y el visor de coordenadas viven ahora en el panel lateral;
+   se adaptan al fondo claro del panel y a su variante oscura (.dark). */
+#technical-sidebar .osm-search-input {
+    width: 100%;
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #0f172a;
+}
+.dark #technical-sidebar .osm-search-input {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(148, 163, 184, 0.25);
+    color: #e2e8f0;
+}
+#technical-sidebar .osm-result-item { color: #334155; border-bottom-color: #f1f5f9; }
+#technical-sidebar .osm-result-item:hover { background: rgba(90, 156, 242, 0.12); color: #0f172a; }
+.dark #technical-sidebar .osm-result-item { color: #cbd5e1; border-bottom-color: rgba(148, 163, 184, 0.12); }
+#osm-search-results {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+.dark #osm-search-results {
+    background: #0b1528 !important;
+    border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+/* ── B · TIPOGRAFÍA DEL PANEL DE ESTADÍSTICAS (requerimiento 4) ──────────
+   Títulos y valores: estilo técnico, moderno y sutil. Los títulos bajan
+   de bold (700) a semibold (600) y los valores de semibold (600) a
+   medium (500), alineados con la jerarquía tipográfica de la ficha
+   lateral (--font-weight-label / --font-weight-valor del bloque 1). */
+#stats-panel h3 {
+    font-weight: 600 !important;
+    letter-spacing: 0.05em !important;
+}
+#stats-panel .font-bold { font-weight: 600 !important; }
+#stats-panel .font-semibold { font-weight: 500 !important; }
