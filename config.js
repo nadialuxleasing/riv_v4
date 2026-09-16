@@ -1,10 +1,10 @@
 /* ============================================================================
-   LUX VISION · CONFIGURACIÓN MUNICIPAL (v2.1 — refactor actualizado)
+   LUX VISION · CONFIGURACIÓN MUNICIPAL (v2.2 — refactor UI/UX + fallbacks)
    ----------------------------------------------------------------------------
    ÚNICO archivo de configuración para replicar o actualizar el visor GIS.
 
    Índice:
-    1 · municipio      → identidad, centro/zoom y logos
+    1 · municipio      → identidad, centro/zoom y logos (con URLs reales)
     2 · geoserver      → URL reservada (futura migración WFS)
     3 · fuentes        → rutas de los GeoJSON / integración externa (Google Sheets)
     4 · camposGlobales → atributos compartidos (fecha, distrito)
@@ -23,8 +23,9 @@ window.LUX_CONFIG = {
     locale: 'es-AR',
     mapaInicial: { center: [-68.468, -33.191], zoom: 15 },
     branding: {
-      logoLux:       { src: 'logo_lux_byn.png', href: '#' },
-      logoMunicipio: { src: 'logo_riv_2.png',   href: '#' }
+      // NUEVO: enlaces reales solicitados por el cliente.
+      logoLux:       { src: 'logo_lux_byn.png', href: 'https://www.luxleasing.com.ar/' },
+      logoMunicipio: { src: 'logo_riv_2.png',   href: 'https://rivadaviamendoza.gob.ar/new/' }
     }
   },
 
@@ -33,17 +34,20 @@ window.LUX_CONFIG = {
     base: 'http://localhost:8090/geoserver/visor_rivadavia/ows?service=WFS&version=1.0.0&request=GetFeature'
   },
 
-  /* ── 3 · FUENTES DE DATOS (GeoJSON estáticos y Google Sheets para reclamos) ─ */
+  /* ── 3 · FUENTES DE DATOS ────────────────────────────────────────────
+     NUEVO: `reclamos` es la fuente externa (Google Sheets). Si falla,
+     `reclamosFallback` actúa como respaldo local (ver app.js §07). */
   fuentes: {
     luminarias:      './luminarias_riv_wgs84.geojson',
     arbolado:        './arboles_v2.geojson',
-    vialidades:      './vialidad_ej_6.geojson', // Actualizado a vialidad_ej_6
+    vialidades:      './vialidad_ej_6.geojson',
     cordon:          './cordon.geojson',
     banquina_vereda: './banquina_vereda.geojson',
     cuneta:          './cuneta.geojson',
     distritos:       './distritos_riv_ide.geojson',
-    /* Reclamos conectados dinámicamente al Google Sheet (exportable en CSV o API) */
-    reclamos:        'https://docs.google.com/spreadsheets/d/1xrjKtepiEjcvpucty6ZAzoh_3C88Plcg/gviz/tq?tqx=out:csv'
+    reclamos:        'https://docs.google.com/spreadsheets/d/1xrjKtepiEjcvpucty6ZAzoh_3C88Plcg/gviz/tq?tqx=out:csv',
+    // NUEVO · Fallback local si el Sheet falla (red/CORS/no disponible).
+    reclamosFallback: './reclamos_rv.geojson'
   },
 
   /* ── 4 · ATRIBUTOS GLOBALES ──────────────────────────────────────────── */
@@ -62,12 +66,7 @@ window.LUX_CONFIG = {
     fechaSolucion:['Fecha Solución', 'FECHA_SOLUCION', 'fecha_solucion']
   },
 
-  /* ── 5.B · CONEXIÓN GOOGLE SHEETS (solicitudes/reclamos) ────────────────
-     La capa de solicitudes se construye DINÁMICAMENTE desde la exportación
-     CSV pública del Sheet. Los 7 campos funcionales se mapean a claves
-     canónicas (nro, usuario, area, tipo, descripcion, fecha, fecha_solucion)
-     y las coordenadas se detectan entre las variantes configuradas abajo
-     (agregue aquí los nombres exactos de sus columnas si difieren). */
+  /* ── 5.B · CONEXIÓN GOOGLE SHEETS (solicitudes/reclamos) ──────────────── */
   reclamosCsv: {
     url: 'https://docs.google.com/spreadsheets/d/1xrjKtepiEjcvpucty6ZAzoh_3C88Plcg/gviz/tq?tqx=out:csv',
     camposCoordenadas: {
@@ -76,16 +75,13 @@ window.LUX_CONFIG = {
     }
   },
 
-  /* ── 6 · PALETA CROMÁTICA ÚNICA ────────────────────────────────────────
-     ORIGEN ÚNICO DE VERDAD para la simbología del mapa, los puntos de color
-     de los desplegables KPI y la leyenda. 
-     NOTA: Se incrementó el contraste en 'reclamos' (halo y trazo más visibles). */
+  /* ── 6 · PALETA CROMÁTICA ÚNICA ──────────────────────────────────────── */
   simbologia: {
     luminarias: { LED: '#22d3ee', SODIO: '#e2f916', OTROS: '#e6b290' },
     arbolado:   { BUENO: '#4f7a61', REGULAR: '#78926f', MALO: '#a5a36f', OTROS: '#8d9b8f' },
     vialidades: { PAVIMENTADO: '#587b9b', CONSOLIDADA: '#7e9b83', TIERRA: '#b29169', 'SIN DATO': '#9aa3a8' },
+    vialidadesPorZona: { MUNICIPAL: '#6a8aa8',DPV:       '#c9926a',OTRO:      '#8f9aa3'},
     lateralVial:{ CORDON: '#b8875d', BANQUINA_VEREDA: '#9a8f72', CUNETA: '#6f93a3' },
-    /* Reclamos con alta visibilidad requerida en mapa */
     reclamos:   { HALO: '#ff0055', TRAZO: '#ffffff', TEXTO: '#ff3366', MARKER_SIZE: 12 },
     seleccion:  { CENTRO: '#31fff5', ANILLO: '#22d3ee' },
     heatmapArbolado: [
@@ -104,12 +100,14 @@ window.LUX_CONFIG = {
       viewbox: '-68.75,-33.05,-68.15,-33.45',
       bounded: 1,
       zoomResultado: 17,
-      /* Geocodificación inversa: clic en el mapa → dirección en la ficha lateral */
       reverseUrl: 'https://nominatim.openstreetmap.org/reverse',
       reverseGeocode: true
     },
     seleccionBBox: { color: '#22d3ee', relleno: 'rgba(34,211,238,0.08)' },
-    filtroDistrito: { bufferMetros: 0 }
+    filtroDistrito: { bufferMetros: 0 },
+    /* NUEVO: capas que se priorizan al filtrar por distrito si el
+       rendimiento lo exige. Se usa como guía para el fallback. */
+    filtradoPrioritario: ['luminarias', 'arbolado']
   },
 
   /* ── 8 · DEFINICIÓN DE CAPAS Y CAMPOS ESPECÍFICOS ────────────────────── */
@@ -119,7 +117,6 @@ window.LUX_CONFIG = {
       id: 'luminarias-layer',
       source: 'luminarias-source',
       label: 'Luminarias',
-      /* 8 campos principales visibles + contenedor para desplegar el resto */
       camposFicha: [
         ['info-id',          'label-id',          ['id_elemento', 'ID_ELEMENTO', 'id', 'ID'], 'ID Elemento'],
         ['info-tecnologia',  'label-tecnologia',  ['tecnologia', 'TECNOLOGIA', 'sap', 'SAP'], 'Tecnología'],
@@ -182,7 +179,6 @@ window.LUX_CONFIG = {
           },
           campoKm: ['km', 'KM']
         },
-        /* Clasificación por administración de la zona: DPV / Municipal / Otro */
         zona: {
           campo: ['zona', 'ZONA'],
           grupos: {
@@ -261,7 +257,6 @@ window.LUX_CONFIG = {
       id: 'arbolado-layer',
       source: 'arbolado-source',
       label: 'Árboles',
-      /* Estructura estricta solicitada: 8 campos principales */
       fichaPrimaria: [
         { etiqueta: 'ID',         campos: ['id', 'ID'] },
         { etiqueta: 'CALLE',      campos: ['calle', 'CALLE'] },
@@ -272,7 +267,6 @@ window.LUX_CONFIG = {
         { etiqueta: 'BASE',       campos: ['base', 'BASE'] },
         { etiqueta: 'F_STREET_W', campos: ['f_street_v', 'F_STREET_V', 'f_street_w', 'F_STREET_W'] }
       ],
-      /* Resto de campos bajo "Ver más campos" */
       fichaSecundaria: [
         { etiqueta: 'Ubicación',                 campos: ['ubicacion', 'UBICACION'] },
         { etiqueta: 'Distancia entre arboles (m)', campos: ['distancia', 'DISTANCIA', 'dist_arboles', 'DIST_ARBOLES'] },
@@ -327,6 +321,5 @@ window.LUX_CONFIG = {
       idCampo: ['Nro', 'nro', 'id', 'ID'],
       elementoFijo: 'Reclamo'
     }
-
   }
 };
