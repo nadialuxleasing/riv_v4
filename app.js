@@ -2049,42 +2049,69 @@ document.addEventListener('DOMContentLoaded', () => {
   const userInput = document.getElementById('userInputMsg');
   const chatMessages = document.getElementById('chatMessages');
 
+  // Recuperar clave guardada previamente si existe
   let userApiKey = localStorage.getItem('gemini_user_api_key') || '';
 
-  // Mostrar / Ocultar ventana
-  btnOpen.addEventListener('click', () => {
-    chatWindow.classList.toggle('d-none');
-    if (userApiKey) {
-      aiKeyPrompt.classList.add('d-none');
-      aiChatConversation.classList.remove('d-none');
-    }
-  });
+  // Si ya hay una clave guardada, mostrar el chat directamente al abrir
+  if (userApiKey) {
+    aiKeyPrompt.classList.add('d-none');
+    aiChatConversation.classList.remove('d-none');
+  }
 
-  btnClose.addEventListener('click', () => chatWindow.classList.add('d-none'));
+  // Abrir / Cerrar ventana flotante
+  if (btnOpen) {
+    btnOpen.addEventListener('click', () => {
+      chatWindow.classList.toggle('d-none');
+    });
+  }
 
-  // Guardar API Key en el navegador
-  btnSaveKey.addEventListener('click', () => {
-    const key = apiKeyInput.value.trim();
-    if (key) {
-      localStorage.setItem('gemini_user_api_key', key);
-      userApiKey = key;
-      aiKeyPrompt.classList.add('d-none');
-      aiChatConversation.classList.remove('d-none');
-    }
-  });
+  if (btnClose) {
+    btnClose.addEventListener('click', () => {
+      chatWindow.classList.add('d-none');
+    });
+  }
+
+  // Guardar API Key en el navegador al hacer clic en el botón verde
+  if (btnSaveKey) {
+    btnSaveKey.addEventListener('click', () => {
+      const key = apiKeyInput.value.trim();
+      if (key) {
+        localStorage.setItem('gemini_user_api_key', key);
+        userApiKey = key;
+        
+        // Ocultar sección de clave y mostrar la conversación de chat
+        aiKeyPrompt.classList.add('d-none');
+        aiChatConversation.classList.remove('d-none');
+      } else {
+        alert('Por favor, ingresa una API Key válida.');
+      }
+    });
+  }
 
   // Enviar mensaje a la API de Gemini
-  btnSend.addEventListener('click', async () => {
-    const text = userInput.value.trim();
-    if (!text || !userApiKey) return;
+  if (btnSend) {
+    btnSend.addEventListener('click', enviarMensaje);
+    userInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') enviarMensaje();
+    });
+  }
 
-    // Agregar mensaje del usuario a la interfaz
+  async function enviarMensaje() {
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    if (!userApiKey) {
+      alert('Primero debes guardar tu API Key.');
+      return;
+    }
+
+    // Mostrar mensaje del usuario en la interfaz
     chatMessages.innerHTML += `<div class="mb-2 text-end"><span class="badge bg-secondary p-2 text-wrap">${text}</span></div>`;
     userInput.value = '';
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-      // Llamada directa al modelo Gemini 1.5 Flash
+      // Llamada directa a la API de Gemini 1.5 Flash
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2096,14 +2123,21 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message || 'Error en la API');
+      }
+
       const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener una respuesta.";
 
-      // Agregar respuesta de la IA a la interfaz
+      // Mostrar respuesta de la IA
       chatMessages.innerHTML += `<div class="mb-2 text-start"><span class="badge bg-light text-dark border p-2 text-wrap">${reply}</span></div>`;
       chatMessages.scrollTop = chatMessages.scrollHeight;
 
     } catch (error) {
-      chatMessages.innerHTML += `<div class="mb-2 text-center text-danger small">Error al conectar con la API.</div>`;
+      console.error("Detalle del error:", error);
+      chatMessages.innerHTML += `<div class="mb-2 text-center text-danger small">Error: ${error.message}</div>`;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-  });
+  }
 });
