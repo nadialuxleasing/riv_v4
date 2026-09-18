@@ -2020,3 +2020,90 @@ window.LUX = {
     resetearFicha,
     limpiarSeleccion
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnOpen = document.getElementById('btnOpenAiChat');
+  const btnClose = document.getElementById('btnCloseAiChat');
+  const chatWindow = document.getElementById('aiChatWindow');
+  const aiKeyPrompt = document.getElementById('aiKeyPrompt');
+  const aiChatConversation = document.getElementById('aiChatConversation');
+  const btnSaveKey = document.getElementById('btnSaveAiKey');
+  const apiKeyInput = document.getElementById('geminiApiKeyInput');
+  const btnSend = document.getElementById('btnSendMsg');
+  const userInput = document.getElementById('userInputMsg');
+  const chatMessages = document.getElementById('chatMessages');
+
+  let userApiKey = localStorage.getItem('gemini_user_api_key') || '';
+
+  // Mostrar / Ocultar ventana
+  btnOpen.addEventListener('click', () => {
+    chatWindow.classList.toggle('d-none');
+    if (userApiKey) {
+      aiKeyPrompt.classList.add('d-none');
+      aiChatConversation.classList.remove('d-none');
+    }
+  });
+
+  btnClose.addEventListener('click', () => chatWindow.classList.add('d-none'));
+
+  // Guardar API Key en el navegador
+  btnSaveKey.addEventListener('click', () => {
+    const key = apiKeyInput.value.trim();
+    if (key) {
+      localStorage.setItem('gemini_user_api_key', key);
+      userApiKey = key;
+      aiKeyPrompt.classList.add('d-none');
+      aiChatConversation.classList.remove('d-none');
+    }
+  });
+
+  // Enviar mensaje a la API de Gemini
+  btnSend.addEventListener('click', async () => {
+    const text = userInput.value.trim();
+    if (!text || !userApiKey) return;
+
+    // Agregar mensaje del usuario a la interfaz
+    chatMessages.innerHTML += `<div class="mb-2 text-end"><span class="badge bg-secondary p-2 text-wrap">${text}</span></div>`;
+    userInput.value = '';
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    try {
+      // Llamada directa al modelo Gemini 1.5 Flash
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: "Eres un asistente experto en sistemas de información geográfica y control de obras viales. Responde brevemente a esta consulta: " + text }]
+          }]
+        })
+      });
+
+      const data = await response.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo obtener una respuesta.";
+
+      // Agregar respuesta de la IA a la interfaz
+      chatMessages.innerHTML += `<div class="mb-2 text-start"><span class="badge bg-light text-dark border p-2 text-wrap">${reply}</span></div>`;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    } catch (error) {
+      chatMessages.innerHTML += `<div class="mb-2 text-center text-danger small">Error al conectar con la API.</div>`;
+    }
+  });
+});
